@@ -42,14 +42,28 @@ export const KanbanBoard = () => {
     setIsAuthLoaded(true);
   }, []);
 
-  // Fetch board data from backend on login
+  // Fetch board data from backend on login with LocalStorage instant fallback
   useEffect(() => {
     if (!user) return;
     setIsLoadingBoard(true);
+
+    const localCached = localStorage.getItem(`kanban_board_${user}`);
+    if (localCached) {
+      try {
+        const parsed = JSON.parse(localCached);
+        if (parsed && parsed.columns && parsed.columns.length > 0) {
+          setBoard(parsed);
+        }
+      } catch {
+        // Ignore JSON parse failure
+      }
+    }
+
     fetchBoard(user)
       .then((data) => {
         if (data && data.columns && data.columns.length > 0) {
           setBoard(data);
+          localStorage.setItem(`kanban_board_${user}`, JSON.stringify(data));
         }
       })
       .finally(() => {
@@ -60,6 +74,7 @@ export const KanbanBoard = () => {
   const persistBoard = useCallback(
     async (nextBoard: BoardData) => {
       if (!user) return;
+      localStorage.setItem(`kanban_board_${user}`, JSON.stringify(nextBoard));
       setIsSyncing(true);
       await saveBoard(user, nextBoard);
       setIsSyncing(false);
@@ -268,10 +283,17 @@ export const KanbanBoard = () => {
       if (response.ok) {
         const data = await response.json();
         setBoard(data);
+        if (user) {
+          localStorage.setItem(`kanban_board_${user}`, JSON.stringify(data));
+        }
+        return;
       }
     } catch {
       // Fallback reset
-      setBoard(initialData);
+    }
+    setBoard(initialData);
+    if (user) {
+      localStorage.setItem(`kanban_board_${user}`, JSON.stringify(initialData));
     }
   };
 
