@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+:root {
+  --accent-yellow: #f59e0b;
+  --primary-blue: #0284c7;
+  --secondary-purple: #9333ea;
+  --navy-dark: #0f172a;
+  --gray-text: #64748b;
+  --surface: #f8fafc;
+  --surface-strong: #ffffff;
+  --card-bg: #ffffff;
+  --stroke: rgba(15, 23, 42, 0.08);
+  --shadow: 0 20px 40px -15px rgba(15, 23, 42, 0.07);
+}
+
+[data-theme="dark"] {
+  --accent-yellow: #fbbf24;
+  --primary-blue: #38bdf8;
+  --secondary-purple: #c084fc;
+  --navy-dark: #f8fafc;
+  --gray-text: #94a3b8;
+  --surface: #070d1e;
+  --surface-strong: #0f172a;
+  --card-bg: #1e293b;
+  --stroke: rgba(255, 255, 255, 0.1);
+  --shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+@theme inline {
+  --color-background: var(--surface);
+  --color-foreground: var(--navy-dark);
+  --font-sans: var(--font-body);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--surface);
+  color: var(--navy-dark);
+  font-family: var(--font-body), "Segoe UI", system-ui, -apple-system, sans-serif;
+  margin: 0;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.font-display {
+  font-family: var(--font-display), "Segoe UI", system-ui, sans-serif;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--stroke);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--gray-text);
+}

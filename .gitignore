@@ -1,0 +1,27 @@
+# Secrets & Environment Variables
+.env
+.env.*
+*.env
+!.env.example
+
+# Databases & Runtime State
+*.db
+*.sqlite3
+pm/backend/pm.db
+
+# Node dependencies & Next.js builds
+node_modules/
+.next/
+out/
+dist/
+
+# Python Virtual Environments & Caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# System files
+.DS_Store
+Thumbs.db

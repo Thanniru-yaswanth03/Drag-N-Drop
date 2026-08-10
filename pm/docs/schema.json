@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "KanbanBoardSchema",
+  "description": "JSON Schema specification for single-board Kanban Studio state",
+  "type": "object",
+  "properties": {
+    "boardId": {
+      "type": "string",
+      "description": "Unique identifier for the board"
+    },
+    "userId": {
+      "type": "string",
+      "description": "Owner user identifier"
+    },
+    "columns": {
+      "type": "array",
+      "description": "Ordered list of columns on the Kanban board",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique column identifier"
+          },
+          "title": {
+            "type": "string",
+            "description": "Display title of the column"
+          },
+          "cardIds": {
+            "type": "array",
+            "description": "Ordered list of card IDs belonging to this column",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["id", "title", "cardIds"],
+        "additionalProperties": false
+      }
+    },
+    "cards": {
+      "type": "object",
+      "description": "Dictionary of card objects keyed by card ID",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique card identifier"
+          },
+          "title": {
+            "type": "string",
+            "description": "Short title of the card"
+          },
+          "details": {
+            "type": "string",
+            "description": "Detailed description or notes for the card"
+          }
+        },
+        "required": ["id", "title", "details"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["columns", "cards"],
+  "additionalProperties": true
+}
