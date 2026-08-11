@@ -20,16 +20,31 @@ export const LoginForm = ({ onLogin }: LoginFormProps) => {
     setLoading(true);
 
     try {
+      const cleanUser = username.trim();
+      if (!cleanUser || !password) {
+        setError("Please provide both username and password.");
+        setLoading(false);
+        return;
+      }
+
       if (isRegistering) {
-        const regRes = await registerApi(username.trim(), password);
+        const regRes = await registerApi(cleanUser, password);
         if (!regRes.success) {
           setError(regRes.error || "Registration failed. Try a different username.");
           setLoading(false);
           return;
         }
+
+        const targetUser = regRes.user || cleanUser;
+        const success = await onLogin(targetUser, password);
+        if (!success) {
+          setError("Account created! Please click Sign In to enter.");
+          setIsRegistering(false);
+        }
+        return;
       }
 
-      const success = await onLogin(username.trim(), password);
+      const success = await onLogin(cleanUser, password);
       if (!success) {
         setError("Invalid username or password. (Hint: user / password)");
       }

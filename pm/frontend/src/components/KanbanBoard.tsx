@@ -295,19 +295,21 @@ export const KanbanBoard = () => {
   const completionPercentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
   const handleLogin = async (username: string, password: string) => {
+    const cleanUser = username.trim().toLowerCase();
     try {
       const response = await fetch(getApiUrl("/api/auth/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username: cleanUser, password }),
       });
       if (response.ok) {
         const data = await response.json();
+        const authedUser = data.user || cleanUser;
         setProjects([]);
         setActiveProjectId(null);
         setBoard(initialData);
-        localStorage.setItem("pm_auth_user", data.user);
-        setUser(data.user);
+        localStorage.setItem("pm_auth_user", authedUser);
+        setUser(authedUser);
         return true;
       }
     } catch {
@@ -316,22 +318,25 @@ export const KanbanBoard = () => {
 
     if (typeof localStorage !== "undefined") {
       const localUsers = JSON.parse(localStorage.getItem("pm_registered_users") || "{}");
-      if (localUsers[username] && localUsers[username] === password) {
+      if (
+        (localUsers[cleanUser] && localUsers[cleanUser] === password) ||
+        (localUsers[username.trim()] && localUsers[username.trim()] === password)
+      ) {
         setProjects([]);
         setActiveProjectId(null);
         setBoard(initialData);
-        localStorage.setItem("pm_auth_user", username);
-        setUser(username);
+        localStorage.setItem("pm_auth_user", cleanUser);
+        setUser(cleanUser);
         return true;
       }
     }
 
-    if (username === "user" && password === "password") {
+    if ((cleanUser === "user" || cleanUser === "testuser") && password === "password") {
       setProjects([]);
       setActiveProjectId(null);
       setBoard(initialData);
-      localStorage.setItem("pm_auth_user", username);
-      setUser(username);
+      localStorage.setItem("pm_auth_user", cleanUser);
+      setUser(cleanUser);
       return true;
     }
 

@@ -17,29 +17,32 @@ export const getApiUrl = (path: string) => {
 };
 
 export async function registerApi(username: string, password: string) {
+  const cleanUsername = username.trim().toLowerCase();
   try {
     const response = await fetch(getApiUrl("/api/auth/register"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username: cleanUsername, password }),
     });
     const data = await response.json().catch(() => ({}));
     if (response.ok && data.success) {
       if (typeof localStorage !== "undefined") {
         const localUsers = JSON.parse(localStorage.getItem("pm_registered_users") || "{}");
-        localUsers[username] = password;
+        localUsers[cleanUsername] = password;
+        localUsers[username.trim()] = password;
         localStorage.setItem("pm_registered_users", JSON.stringify(localUsers));
       }
-      return data;
+      return { success: true, user: data.user || cleanUsername };
     }
     return { success: false, error: data.detail || "Registration failed" };
   } catch (error) {
     console.error("Error registering user:", error);
     if (typeof localStorage !== "undefined") {
       const localUsers = JSON.parse(localStorage.getItem("pm_registered_users") || "{}");
-      localUsers[username] = password;
+      localUsers[cleanUsername] = password;
+      localUsers[username.trim()] = password;
       localStorage.setItem("pm_registered_users", JSON.stringify(localUsers));
-      return { success: true, user: username };
+      return { success: true, user: cleanUsername };
     }
     return { success: false, error: "Network error during registration" };
   }
