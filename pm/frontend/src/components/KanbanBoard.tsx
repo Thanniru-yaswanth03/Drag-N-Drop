@@ -345,7 +345,7 @@ export const KanbanBoard = () => {
 
   const handleLogout = async () => {
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      await fetch(getApiUrl("/api/auth/logout"), { method: "POST" });
     } catch {
       // Ignore network failure on logout
     }
@@ -499,7 +499,8 @@ export const KanbanBoard = () => {
 
   const handleResetBoard = async () => {
     try {
-      const response = await fetch("/api/board/reset", { method: "POST" });
+      const activeUser = user || "user";
+      const response = await fetch(getApiUrl(`/api/board/reset?username=${encodeURIComponent(activeUser)}`), { method: "POST" });
       if (response.ok) {
         const data = await response.json();
         setBoard(data);

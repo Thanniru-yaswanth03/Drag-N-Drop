@@ -26,7 +26,7 @@ test("shows error on invalid login", async ({ page }) => {
   await page.getByLabel("Username").fill("wrong");
   await page.getByLabel("Password").fill("wrongpass");
   await page.locator('button[type="submit"]').click();
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.getByText("Invalid username or password")).toBeVisible();
 });
 
 test("loads the kanban board after login", async ({ page }) => {

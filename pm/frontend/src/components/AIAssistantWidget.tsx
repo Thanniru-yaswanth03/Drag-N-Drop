@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, type FormEvent } from "react";
 import type { BoardData } from "@/lib/kanban";
+import { getApiUrl } from "@/lib/api";
 
 type Message = {
   id: string;
@@ -62,7 +63,7 @@ export const AIAssistantWidget = ({ board, projectId, onBoardUpdate }: AIAssista
       }));
 
       const activeUser = localStorage.getItem("pm_auth_user") || "user";
-      const response = await fetch(`/api/ai/chat?username=${encodeURIComponent(activeUser)}`, {
+      const response = await fetch(getApiUrl(`/api/ai/chat?username=${encodeURIComponent(activeUser)}`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
