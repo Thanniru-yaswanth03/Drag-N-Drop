@@ -4,7 +4,7 @@
 
 The Project Management MVP uses a local SQLite relational database (`pm.db`). The database is auto-created on application launch if it does not exist.
 
-While the MVP features a single signed-in user (`user` / `password`) and one board, the database schema is fully normalized to support future multi-tenant and multi-board capabilities.
+The system supports multi-user database-backed authentication with PBKDF2 password hashing (SHA-256), registration (`POST /api/auth/register`), login (`POST /api/auth/login`), and isolated multi-project workspaces per user account.
 
 ## Entity-Relationship Diagram
 
@@ -13,6 +13,27 @@ erDiagram
     USERS ||--o{ BOARDS : owns
     BOARDS ||--|{ COLUMNS : contains
     COLUMNS ||--o{ CARDS : contains
+    BOARDS ||--o{ PROJECT_MEMBERS : includes
+    USERS ||--o{ NOTIFICATIONS : receives
+
+    NOTIFICATIONS {
+        string id PK
+        string user_id FK
+        string project_id FK
+        string type
+        string title
+        string message
+        integer is_read
+        datetime created_at
+    }
+
+    PROJECT_MEMBERS {
+        string id PK
+        string project_id FK
+        string user_id FK
+        string role
+        datetime created_at
+    }
 
     USERS {
         string id PK
@@ -42,6 +63,11 @@ erDiagram
         string column_id FK
         string title
         string details
+        string description
+        string priority
+        string due_date
+        string tags
+        string assignee
         integer position
         datetime created_at
         datetime updated_at
@@ -81,6 +107,11 @@ CREATE TABLE IF NOT EXISTS cards (
     column_id TEXT NOT NULL,
     title TEXT NOT NULL,
     details TEXT DEFAULT '',
+    description TEXT DEFAULT '',
+    priority TEXT DEFAULT 'medium',
+    due_date TEXT DEFAULT NULL,
+    tags TEXT DEFAULT '[]',
+    assignee TEXT DEFAULT NULL,
     position INTEGER NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -90,6 +121,21 @@ CREATE TABLE IF NOT EXISTS cards (
 CREATE INDEX IF NOT EXISTS idx_boards_user_id ON boards(user_id);
 CREATE INDEX IF NOT EXISTS idx_columns_board_id ON columns(board_id);
 CREATE INDEX IF NOT EXISTS idx_cards_column_id ON cards(column_id);
+
+CREATE TABLE IF NOT EXISTS activity_log (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    message TEXT NOT NULL,
+    details TEXT DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES boards(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_activity_log_project_id ON activity_log(project_id);
 ```
 
 ## JSON Board State Mapping

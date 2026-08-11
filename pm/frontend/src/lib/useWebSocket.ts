@@ -1,0 +1,75 @@
+"use client";
+
+import { useEffect, useRef, useState, useCallback } from "react";
+
+type UseWebSocketOptions = {
+  projectId: string | null;
+  username: string | null;
+  onMessage?: (data: any) => void;
+};
+
+export function useWebSocket({ projectId, username, onMessage }: UseWebSocketOptions) {
+  const [isConnected, setIsConnected] = useState(false);
+  const [status, setStatus] = useState<"connected" | "connecting" | "disconnected">("disconnected");
+  const wsRef = useRef<WebSocket | null>(null);
+
+  const connect = useCallback(() => {
+    if (!projectId || !username) return;
+
+    setStatus("connecting");
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const host = window.location.host;
+    const url = `${protocol}//${host}/ws/projects/${encodeURIComponent(projectId)}?username=${encodeURIComponent(username)}`;
+
+    try {
+      const ws = new WebSocket(url);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        setIsConnected(true);
+        setStatus("connected");
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (onMessage) onMessage(payload);
+        } catch {
+          // Ignore invalid JSON
+        }
+      };
+
+      ws.onclose = () => {
+        setIsConnected(false);
+        setStatus("disconnected");
+      };
+
+      ws.onerror = () => {
+        setIsConnected(false);
+        setStatus("disconnected");
+      };
+    } catch {
+      setIsConnected(false);
+      setStatus("disconnected");
+    }
+  }, [projectId, username, onMessage]);
+
+  useEffect(() => {
+    connect();
+
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [connect]);
+
+  const send = useCallback((data: any) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(data));
+    }
+  }, []);
+
+  return { isConnected, status, send };
+}

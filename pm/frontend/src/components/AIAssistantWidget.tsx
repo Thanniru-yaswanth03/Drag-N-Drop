@@ -12,10 +12,11 @@ type Message = {
 
 type AIAssistantWidgetProps = {
   board: BoardData;
+  projectId?: string | null;
   onBoardUpdate: (nextBoard: BoardData, notificationMessage?: string) => void;
 };
 
-export const AIAssistantWidget = ({ board, onBoardUpdate }: AIAssistantWidgetProps) => {
+export const AIAssistantWidget = ({ board, projectId, onBoardUpdate }: AIAssistantWidgetProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([
@@ -30,9 +31,13 @@ export const AIAssistantWidget = ({ board, onBoardUpdate }: AIAssistantWidgetPro
   const [loading, setLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  const scrollToBottom = () => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
   useEffect(() => {
     if (isOpen) {
-      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      scrollToBottom();
     }
   }, [messages, isOpen]);
 
@@ -56,13 +61,15 @@ export const AIAssistantWidget = ({ board, onBoardUpdate }: AIAssistantWidgetPro
         content: m.content,
       }));
 
-      const response = await fetch("/api/ai/chat", {
+      const activeUser = localStorage.getItem("pm_auth_user") || "user";
+      const response = await fetch(`/api/ai/chat?username=${encodeURIComponent(activeUser)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: messageText.trim(),
           history,
           board,
+          project_id: projectId || undefined,
         }),
       });
 
@@ -137,7 +144,7 @@ export const AIAssistantWidget = ({ board, onBoardUpdate }: AIAssistantWidgetPro
 
       {/* Floating Chat Drawer Window */}
       {isOpen && (
-        <div className="flex h-[580px] w-[380px] sm:w-[420px] flex-col rounded-[28px] border border-[var(--stroke)] bg-[var(--card-bg)] shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-bottom-6 duration-200">
+        <div className="flex h-[580px] w-[calc(100vw-32px)] sm:w-[420px] max-w-[420px] flex-col rounded-[28px] border border-[var(--stroke)] bg-[var(--card-bg)] shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-bottom-6 duration-200">
           {/* Header */}
           <div className="flex items-center justify-between border-b border-[var(--stroke)] px-6 py-4">
             <div className="flex items-center gap-3">
@@ -216,14 +223,50 @@ export const AIAssistantWidget = ({ board, onBoardUpdate }: AIAssistantWidgetPro
             <div ref={chatEndRef} />
           </div>
 
+          {/* Quick AI Intelligence Action Presets */}
+          <div className="flex flex-wrap items-center gap-1.5 px-4 pt-2.5">
+            <button
+              type="button"
+              onClick={() => handleSend("Summarize project")}
+              disabled={loading}
+              className="rounded-full border border-[var(--stroke)] bg-[var(--surface)] px-2.5 py-1 text-[10px] font-bold text-[var(--navy-dark)] hover:bg-[var(--primary-blue)] hover:text-white transition disabled:opacity-50"
+            >
+              📊 Project Summary
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSend("Workload analysis")}
+              disabled={loading}
+              className="rounded-full border border-[var(--stroke)] bg-[var(--surface)] px-2.5 py-1 text-[10px] font-bold text-[var(--navy-dark)] hover:bg-[var(--primary-blue)] hover:text-white transition disabled:opacity-50"
+            >
+              👥 Workload
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSend("Overdue tasks")}
+              disabled={loading}
+              className="rounded-full border border-[var(--stroke)] bg-[var(--surface)] px-2.5 py-1 text-[10px] font-bold text-[var(--navy-dark)] hover:bg-[var(--primary-blue)] hover:text-white transition disabled:opacity-50"
+            >
+              ⏰ Overdue
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSend("Suggest organization")}
+              disabled={loading}
+              className="rounded-full border border-[var(--stroke)] bg-[var(--surface)] px-2.5 py-1 text-[10px] font-bold text-[var(--navy-dark)] hover:bg-[var(--primary-blue)] hover:text-white transition disabled:opacity-50"
+            >
+              ⚡ Re-Prioritize
+            </button>
+          </div>
+
           {/* Input Form */}
-          <form onSubmit={handleSubmit} className="border-t border-[var(--stroke)] p-4">
+          <form onSubmit={handleSubmit} className="border-t border-[var(--stroke)] p-4 pt-2">
             <div className="flex items-center gap-2 rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] px-3.5 py-2.5">
               <input
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Clear, move, or add cards..."
+                placeholder="Ask AI or pick an action above..."
                 disabled={loading}
                 className="w-full bg-transparent text-xs font-medium text-[var(--navy-dark)] outline-none placeholder:text-[var(--gray-text)]"
               />

@@ -63,3 +63,37 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--gray-text);
 }
+
+/* Contrast & visibility enforcement for light and dark mode inputs */
+input, select, textarea {
+  color: var(--navy-dark);
+  background-color: var(--surface);
+}
+
+::placeholder {
+  color: var(--gray-text);
+  opacity: 0.85;
+}
+
+/* Mobile snap scroll utility for Kanban columns */
+.mobile-snap-scroll {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-snap-column {
+  scroll-snap-align: center;
+  flex-shrink: 0;
+  width: calc(100vw - 32px);
+  max-width: 340px;
+}
+
+@media (min-width: 1024px) {
+  .mobile-snap-column {
+    width: auto;
+    max-width: none;
+    flex-shrink: 1;
+  }
+}

@@ -22,7 +22,7 @@ describe("KanbanBoard", () => {
   it("renders login form when unauthenticated", () => {
     localStorage.clear();
     render(<KanbanBoard />);
-    expect(screen.getByRole("button", { name: /sign in/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /sign in/i }).length).toBeGreaterThan(0);
   });
 
   it("renders five columns when authenticated", () => {
@@ -68,6 +68,6 @@ describe("KanbanBoard", () => {
     render(<KanbanBoard />);
     const logoutButton = screen.getByRole("button", { name: /logout/i });
     await userEvent.click(logoutButton);
-    expect(screen.getByRole("button", { name: /sign in/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /sign in/i }).length).toBeGreaterThan(0);
   });
 });

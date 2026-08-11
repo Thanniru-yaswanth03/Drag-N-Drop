@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { registerApi } from "@/lib/api";
 
 type LoginFormProps = {
   onLogin: (username: string, password: string) => Promise<boolean> | boolean;
 };
 
 export const LoginForm = ({ onLogin }: LoginFormProps) => {
+  const [isRegistering, setIsRegistering] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -18,6 +20,15 @@ export const LoginForm = ({ onLogin }: LoginFormProps) => {
     setLoading(true);
 
     try {
+      if (isRegistering) {
+        const regRes = await registerApi(username.trim(), password);
+        if (!regRes.success) {
+          setError(regRes.error || "Registration failed. Try a different username.");
+          setLoading(false);
+          return;
+        }
+      }
+
       const success = await onLogin(username.trim(), password);
       if (!success) {
         setError("Invalid username or password. (Hint: user / password)");
@@ -30,6 +41,7 @@ export const LoginForm = ({ onLogin }: LoginFormProps) => {
   };
 
   const handleAutoFill = () => {
+    setIsRegistering(false);
     setUsername("user");
     setPassword("password");
   };
@@ -45,17 +57,46 @@ export const LoginForm = ({ onLogin }: LoginFormProps) => {
           <div className="text-center">
             <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-[var(--stroke)] bg-[var(--surface)] px-4 py-1.5 text-xs font-bold uppercase tracking-[0.25em] text-[var(--navy-dark)] shadow-2xs">
               <span className="h-2 w-2 rounded-full bg-[var(--accent-yellow)] animate-pulse" />
-              Drag N Drop
+              Drag N Drop • YASH 🐐
             </div>
+
+            {/* Auth Mode Toggle Tabs */}
+            <div className="mt-6 flex rounded-2xl bg-[var(--surface)] p-1 border border-[var(--stroke)]">
+              <button
+                type="button"
+                onClick={() => { setIsRegistering(false); setError(null); }}
+                className={`flex-1 rounded-xl py-2 text-xs font-bold transition ${
+                  !isRegistering
+                    ? "bg-[var(--card-bg)] text-[var(--navy-dark)] shadow-sm"
+                    : "text-[var(--gray-text)] hover:text-[var(--navy-dark)]"
+                }`}
+              >
+                Sign In
+              </button>
+              <button
+                type="button"
+                onClick={() => { setIsRegistering(true); setError(null); }}
+                className={`flex-1 rounded-xl py-2 text-xs font-bold transition ${
+                  isRegistering
+                    ? "bg-[var(--card-bg)] text-[var(--navy-dark)] shadow-sm"
+                    : "text-[var(--gray-text)] hover:text-[var(--navy-dark)]"
+                }`}
+              >
+                Create Account
+              </button>
+            </div>
+
             <h1 className="mt-4 font-display text-3xl sm:text-4xl font-extrabold text-[var(--navy-dark)] tracking-tight">
-              Sign In
+              {isRegistering ? "Register Account" : "Sign In"}
             </h1>
             <p className="mt-2 text-xs sm:text-sm font-medium leading-relaxed text-[var(--gray-text)]">
-              Access your project management workspace.
+              {isRegistering
+                ? "Create a new user account to manage your projects."
+                : "Access your project management workspace."}
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="mt-8 space-y-4">
+          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
             {error && (
               <div
                 role="alert"
@@ -106,7 +147,13 @@ export const LoginForm = ({ onLogin }: LoginFormProps) => {
               disabled={loading}
               className="mt-6 w-full rounded-2xl bg-gradient-to-r from-[var(--secondary-purple)] to-[var(--primary-blue)] py-4 text-xs font-bold uppercase tracking-widest text-white shadow-xl transition hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
             >
-              {loading ? "Signing in..." : "Sign In"}
+              {loading
+                ? isRegistering
+                  ? "Creating Account..."
+                  : "Signing in..."
+                : isRegistering
+                ? "Create Account"
+                : "Sign In"}
             </button>
           </form>
 

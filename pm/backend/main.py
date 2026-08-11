@@ -1,15 +1,19 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, List, Optional, Any
-from fastapi import FastAPI, HTTPException, status
-from fastapi.responses import FileResponse, HTMLResponse
+import time
+from fastapi import FastAPI, HTTPException, status, WebSocket, WebSocketDisconnect, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import ai
 import database
+import config
+from websocket_manager import ws_manager
 
-# Ensure database and default tables exist
+from fastapi.middleware.cors import CORSMiddleware
+
 database.init_db()
 
 
@@ -21,6 +25,39 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Drag N Drop API", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=config.CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# In-memory IP Rate Limiter
+LOGIN_ATTEMPTS: Dict[str, List[float]] = {}
+
+
+def check_rate_limit(client_ip: str) -> bool:
+    now = time.time()
+    window = config.RATE_LIMIT_LOGIN_WINDOW_SECONDS
+    max_attempts = config.RATE_LIMIT_LOGIN_MAX
+
+    attempts = [t for t in LOGIN_ATTEMPTS.get(client_ip, []) if now - t < window]
+    attempts.append(now)
+    LOGIN_ATTEMPTS[client_ip] = attempts
+
+    return len(attempts) <= max_attempts
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    if isinstance(exc, HTTPException):
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An internal server error occurred."},
+    )
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
@@ -38,18 +75,51 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+
+
+class AddMemberRequest(BaseModel):
+    username: str
+    role: str = "member"
+
+
 class CardCreateRequest(BaseModel):
     columnId: str
     cardId: Optional[str] = None
     title: str
     details: Optional[str] = ""
+    description: Optional[str] = ""
     priority: Optional[str] = "medium"
+    dueDate: Optional[str] = None
+    tags: Optional[List[str]] = []
+    assignee: Optional[str] = None
 
 
 class CardUpdateRequest(BaseModel):
     title: Optional[str] = None
     details: Optional[str] = None
+    description: Optional[str] = None
     priority: Optional[str] = None
+    dueDate: Optional[str] = None
+    tags: Optional[List[str]] = None
+    assignee: Optional[str] = None
+
+
+class ProjectItem(BaseModel):
+    id: str
+    name: str
+    createdAt: Optional[str] = None
+    updatedAt: Optional[str] = None
+
+
+class ProjectCreateRequest(BaseModel):
+    name: str
+
+
+class ProjectUpdateRequest(BaseModel):
+    name: str
 
 
 class ColumnItem(BaseModel):
@@ -61,8 +131,14 @@ class ColumnItem(BaseModel):
 class CardItem(BaseModel):
     id: str
     title: str
-    details: str
+    details: Optional[str] = ""
+    description: Optional[str] = ""
     priority: Optional[str] = "medium"
+    dueDate: Optional[str] = None
+    tags: Optional[List[str]] = []
+    assignee: Optional[str] = None
+    createdAt: Optional[str] = None
+    updatedAt: Optional[str] = None
 
 
 class BoardSaveRequest(BaseModel):
@@ -74,6 +150,7 @@ class AIChatRequest(BaseModel):
     message: str
     history: Optional[List[Dict[str, str]]] = []
     board: Optional[Dict[str, Any]] = None
+    project_id: Optional[str] = None
 
 
 @app.get("/api/health")
@@ -81,18 +158,43 @@ def health_check():
     return {"status": "ok"}
 
 
+@app.post("/api/auth/register")
+def register(credentials: RegisterRequest, request: Request):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    if not check_rate_limit(client_ip):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many authentication attempts. Please try again in 1 minute.",
+        )
+    res = database.register_user(credentials.username, credentials.password)
+    if not res.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=res.get("error", "Registration failed"),
+        )
+    return res
+
+
 @app.post("/api/auth/login")
-def login(credentials: LoginRequest):
-    if credentials.username == "user" and credentials.password == "password":
-        return {
-            "success": True,
-            "user": credentials.username,
-            "token": f"token-{credentials.username}-session",
-        }
+def login(credentials: LoginRequest, request: Request):
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    if not check_rate_limit(client_ip):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many authentication attempts. Please try again in 1 minute.",
+        )
+    res = database.authenticate_user(credentials.username, credentials.password)
+    if res:
+        return res
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid username or password",
     )
+
+
+@app.get("/api/auth/me")
+def get_me(username: str = "user"):
+    return {"user": username, "authenticated": True}
 
 
 @app.post("/api/auth/logout")
@@ -100,14 +202,46 @@ def logout():
     return {"success": True}
 
 
+@app.get("/api/projects", response_model=List[ProjectItem])
+def get_projects(username: str = "user"):
+    return database.get_projects(username)
+
+
+@app.post("/api/projects", response_model=ProjectItem)
+def create_project(payload: ProjectCreateRequest, username: str = "user"):
+    return database.create_project(username, payload.name)
+
+
+@app.put("/api/projects/{project_id}", response_model=ProjectItem)
+def update_project(project_id: str, payload: ProjectUpdateRequest, username: str = "user"):
+    updated = database.update_project(username, project_id, payload.name)
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found or forbidden")
+    return updated
+
+
+@app.delete("/api/projects/{project_id}")
+def delete_project(project_id: str, username: str = "user"):
+    deleted = database.delete_project(username, project_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found or forbidden")
+    return {"success": True, "deleted": project_id}
+
+
 @app.get("/api/board")
-def get_board(username: str = "user"):
-    return database.get_board(username)
+def get_board(username: str = "user", project_id: Optional[str] = None):
+    res = database.get_board(user_id=username, project_id=project_id)
+    if res is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found or forbidden")
+    return res
 
 
 @app.put("/api/board")
-def update_board(payload: BoardSaveRequest, username: str = "user"):
-    return database.save_board(username, payload.model_dump())
+def update_board(payload: BoardSaveRequest, username: str = "user", project_id: Optional[str] = None):
+    res = database.save_board(user_id=username, board_data=payload.model_dump(), project_id=project_id)
+    if res is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found or forbidden")
+    return res
 
 
 @app.post("/api/board/reset")
@@ -123,14 +257,33 @@ def create_card(payload: CardCreateRequest, username: str = "user"):
         column_id=payload.columnId,
         card_id=card_id,
         title=payload.title,
-        details=payload.details or "",
+        details=payload.details or payload.description or "",
+        description=payload.description or payload.details or "",
+        priority=payload.priority or "medium",
+        due_date=payload.dueDate,
+        tags=payload.tags or [],
+        assignee=payload.assignee,
     )
     return {"success": True, "card": card}
 
 
+@app.put("/api/cards/{card_id}")
+def update_card(card_id: str, payload: CardUpdateRequest, username: str = "user"):
+    res = database.update_card(card_id, payload.model_dump(exclude_unset=True), user_id=username)
+    if not res:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
+    if isinstance(res, dict) and "error" in res:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=res["error"])
+    return {"success": True, "card": res}
+
+
 @app.delete("/api/cards/{card_id}")
-def delete_card(card_id: str):
-    database.delete_card(card_id)
+def delete_card(card_id: str, username: str = "user"):
+    res = database.delete_card(card_id, user_id=username)
+    if isinstance(res, dict) and "error" in res:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=res["error"])
+    if not res:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
     return {"success": True, "deleted": card_id}
 
 
@@ -141,7 +294,7 @@ async def ai_test_endpoint():
 
 @app.post("/api/ai/chat")
 async def ai_chat_endpoint(payload: AIChatRequest, username: str = "user"):
-    current_board = payload.board or database.get_board(username)
+    current_board = payload.board or database.get_board(username, project_id=payload.project_id)
     result = await ai.chat_with_ai(
         user_message=payload.message,
         history=payload.history or [],
@@ -150,10 +303,87 @@ async def ai_chat_endpoint(payload: AIChatRequest, username: str = "user"):
     
     # If AI returned a board update, automatically persist to SQLite
     if result.get("board_update"):
-        updated_board = database.save_board(username, result["board_update"])
+        updated_board = database.save_board(username, result["board_update"], project_id=payload.project_id)
         result["board_update"] = updated_board
         
     return result
+
+
+@app.get("/api/activity-log")
+@app.get("/api/projects/{project_id}/activity")
+def get_activity_log(project_id: str, username: str = "user", limit: int = 50, offset: int = 0):
+    if not database.check_user_permission(project_id, username, "viewer"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: insufficient permissions for activity log",
+        )
+    activities = database.get_project_activities(project_id, user_id=username, limit=limit, offset=offset)
+    return {"activities": activities}
+
+
+@app.get("/api/projects/{project_id}/members")
+def get_members(project_id: str, username: str = "user"):
+    members = database.get_project_members(project_id)
+    user_role = database.get_user_role(project_id, username)
+    return {"members": members, "userRole": user_role}
+
+
+@app.post("/api/projects/{project_id}/members")
+def add_member(project_id: str, payload: AddMemberRequest, username: str = "user"):
+    res = database.add_project_member(project_id, payload.username, payload.role, username)
+    if not res.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=res.get("error", "Forbidden"),
+        )
+    return res
+
+
+@app.delete("/api/projects/{project_id}/members/{target_username}")
+def remove_member(project_id: str, target_username: str, username: str = "user"):
+    res = database.remove_project_member(project_id, target_username, username)
+    if not res.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=res.get("error", "Forbidden"),
+        )
+    return res
+
+
+# Real-Time WebSocket Channel
+@app.websocket("/ws/projects/{project_id}")
+async def websocket_endpoint(websocket: WebSocket, project_id: str, username: str = "user"):
+    if not database.check_user_permission(project_id, username, "viewer"):
+        await websocket.close(code=4003)
+        return
+
+    await ws_manager.connect(websocket, project_id)
+    try:
+        while True:
+            data = await websocket.receive_json()
+            await ws_manager.broadcast_to_project(project_id, data, sender=websocket)
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket, project_id)
+    except Exception:
+        ws_manager.disconnect(websocket, project_id)
+
+
+# Notification Endpoints
+@app.get("/api/notifications")
+def get_notifications(username: str = "user", limit: int = 50, offset: int = 0):
+    return database.get_user_notifications(username, limit=limit, offset=offset)
+
+
+@app.put("/api/notifications/{notification_id}/read")
+def mark_read(notification_id: str, username: str = "user"):
+    database.mark_notification_as_read(notification_id, username)
+    return {"success": True}
+
+
+@app.post("/api/notifications/read-all")
+def mark_all_read(username: str = "user"):
+    database.mark_all_notifications_read(username)
+    return {"success": True}
 
 
 @app.get("/{full_path:path}")

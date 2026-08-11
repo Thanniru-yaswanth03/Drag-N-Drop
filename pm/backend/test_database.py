@@ -41,15 +41,79 @@ def test_api_board_endpoints():
     assert "columns" in data
     assert len(data["columns"]) == 5
 
-    # Test POST /api/cards
+    # Test POST /api/cards with Part 11 fields
     card_resp = client.post(
         "/api/cards",
-        json={"columnId": "col-backlog", "cardId": "card-test-99", "title": "Test Card", "details": "Notes"},
+        json={
+            "columnId": "col-backlog",
+            "cardId": "card-test-99",
+            "title": "Test Card",
+            "details": "Notes",
+            "description": "Full description",
+            "priority": "high",
+            "dueDate": "2026-08-30",
+            "tags": ["frontend", "part11"],
+            "assignee": "yash",
+        },
     )
     assert card_resp.status_code == 200
-    assert card_resp.json()["card"]["id"] == "card-test-99"
+    card_data = card_resp.json()["card"]
+    assert card_data["id"] == "card-test-99"
+    assert card_data["priority"] == "high"
+    assert card_data["dueDate"] == "2026-08-30"
+    assert card_data["tags"] == ["frontend", "part11"]
+    assert card_data["assignee"] == "yash"
+
+    # Test PUT /api/cards/{card_id}
+    put_resp = client.put(
+        "/api/cards/card-test-99",
+        json={
+            "title": "Updated Test Card",
+            "priority": "low",
+            "tags": ["updated"],
+        },
+    )
+    assert put_resp.status_code == 200
+    updated_card = put_resp.json()["card"]
+    assert updated_card["title"] == "Updated Test Card"
+    assert updated_card["priority"] == "low"
+    assert updated_card["tags"] == ["updated"]
 
     # Test DELETE /api/cards
     del_resp = client.delete("/api/cards/card-test-99")
     assert del_resp.status_code == 200
     assert del_resp.json()["deleted"] == "card-test-99"
+
+
+def test_enhanced_task_management_db():
+    database.seed_default_board("testuser", TEST_DB_PATH)
+    added = database.add_card(
+        user_id="testuser",
+        column_id="col-backlog",
+        card_id="card-part11-1",
+        title="Part 11 Task",
+        details="Detail text",
+        description="Description text",
+        priority="high",
+        due_date="2026-09-01",
+        tags=["core", "task"],
+        assignee="batman",
+        db_path=TEST_DB_PATH,
+    )
+    assert added["id"] == "card-part11-1"
+    assert added["priority"] == "high"
+    assert added["dueDate"] == "2026-09-01"
+    assert added["tags"] == ["core", "task"]
+    assert added["assignee"] == "batman"
+    assert added["createdAt"] is not None
+
+    updated = database.update_card(
+        card_id="card-part11-1",
+        updates={"title": "Renamed Part 11 Task", "priority": "medium", "assignee": "robin"},
+        db_path=TEST_DB_PATH,
+    )
+    assert updated["title"] == "Renamed Part 11 Task"
+    assert updated["priority"] == "medium"
+    assert updated["assignee"] == "robin"
+    assert updated["updatedAt"] is not None
+

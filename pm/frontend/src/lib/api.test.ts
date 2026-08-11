@@ -19,7 +19,9 @@ describe("api client", () => {
 
     const result = await fetchBoard("user");
     expect(result).toEqual(mockBoardResponse);
-    expect(fetch).toHaveBeenCalledWith("/api/board?username=user");
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/board\?username=user/),
+    );
   });
 
   it("saves board data successfully", async () => {
@@ -29,8 +31,11 @@ describe("api client", () => {
 
     const success = await saveBoard("user", initialData);
     expect(success).toBe(true);
-    expect(fetch).toHaveBeenCalledWith("/api/board?username=user", expect.objectContaining({
-      method: "PUT",
-    }));
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/board\?username=user/),
+      expect.objectContaining({
+        method: "PUT",
+      })
+    );
   });
 });

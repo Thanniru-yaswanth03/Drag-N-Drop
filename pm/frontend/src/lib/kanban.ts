@@ -2,7 +2,13 @@ export type Card = {
   id: string;
   title: string;
   details: string;
+  description?: string;
   priority?: "high" | "medium" | "low";
+  dueDate?: string | null;
+  tags?: string[];
+  assignee?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 };
 
 export type Column = {

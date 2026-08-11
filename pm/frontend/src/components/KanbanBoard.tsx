@@ -19,20 +19,89 @@ import { LoginForm } from "@/components/LoginForm";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { EditCardModal } from "@/components/EditCardModal";
 import { AIAssistantWidget } from "@/components/AIAssistantWidget";
+import { TaskFilterToolbar } from "@/components/TaskFilterToolbar";
+import { ProjectSwitcher } from "@/components/ProjectSwitcher";
+import { ActivityHistoryModal } from "@/components/ActivityHistoryModal";
+import { ProjectMembersModal } from "@/components/ProjectMembersModal";
+import { NotificationCenterModal } from "@/components/NotificationCenterModal";
+import { useUndoRedo } from "@/lib/useUndoRedo";
+import { useWebSocket } from "@/lib/useWebSocket";
 import { createId, initialData, moveCard, type Card, type BoardData } from "@/lib/kanban";
-import { fetchBoard, saveBoard, deleteCardApi } from "@/lib/api";
+import {
+  fetchBoard,
+  saveBoard,
+  deleteCardApi,
+  updateCardApi,
+  fetchProjects,
+  createProjectApi,
+  updateProjectApi,
+  deleteProjectApi,
+  fetchProjectMembers,
+  fetchNotificationsApi,
+  type Project,
+} from "@/lib/api";
+import {
+  filterAndSortBoard,
+  extractAvailableTags,
+  getActiveFilterCount,
+  defaultFilterOptions,
+  defaultSortOption,
+  type FilterOptions,
+  type SortOptionType,
+} from "@/lib/filterUtils";
 
 export const KanbanBoard = () => {
   const [user, setUser] = useState<string | null>(null);
   const [isAuthLoaded, setIsAuthLoaded] = useState(false);
-  const [board, setBoard] = useState<BoardData>(() => initialData);
+  const {
+    state: board,
+    set: setBoard,
+    reset: resetBoard,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useUndoRedo<BoardData>(initialData);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [isLoadingBoard, setIsLoadingBoard] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [editingCard, setEditingCard] = useState<Card | null>(null);
+  const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
+  const [isMembersModalOpen, setIsMembersModalOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
+  const [userRole, setUserRole] = useState<string>("owner");
   const [aiNotification, setAiNotification] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [priorityFilter, setPriorityFilter] = useState<"all" | "high" | "medium" | "low">("all");
+  const [filters, setFilters] = useState<FilterOptions>(defaultFilterOptions);
+
+  // Real-Time WebSocket Channel
+  const handleWsMessage = useCallback((payload: any) => {
+    if (payload && payload.type === "BOARD_UPDATED" && payload.board) {
+      setBoard(payload.board);
+    }
+  }, [setBoard]);
+
+  const { isConnected: isWsConnected } = useWebSocket({
+    projectId: activeProjectId,
+    username: user,
+    onMessage: handleWsMessage,
+  });
+
+  const refreshNotifications = useCallback(() => {
+    if (!user) return;
+    fetchNotificationsApi(user).then((res) => {
+      setUnreadNotifCount(res.unreadCount);
+    });
+  }, [user]);
+
+  useEffect(() => {
+    refreshNotifications();
+    const timer = setInterval(refreshNotifications, 15000);
+    return () => clearInterval(timer);
+  }, [refreshNotifications]);
+  const [sortOption, setSortOption] = useState<SortOptionType>(defaultSortOption);
 
   useEffect(() => {
     const storedUser = localStorage.getItem("pm_auth_user");
@@ -42,12 +111,36 @@ export const KanbanBoard = () => {
     setIsAuthLoaded(true);
   }, []);
 
-  // Fetch board data from backend on login with LocalStorage instant fallback
+  // Fetch user projects list on login
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setProjects([]);
+      setActiveProjectId(null);
+      setBoard(initialData);
+      return;
+    }
+
+    setProjects([]);
+    setActiveProjectId(null);
+
+    fetchProjects(user).then((projs) => {
+      const safeProjs = Array.isArray(projs) ? projs : [];
+      setProjects(safeProjs);
+      if (safeProjs.length > 0) {
+        const savedActiveId = localStorage.getItem(`kanban_active_project_${user}`);
+        const found = safeProjs.find((p) => p.id === savedActiveId);
+        setActiveProjectId(found ? found.id : safeProjs[0].id);
+      }
+    });
+  }, [user]);
+
+  // Fetch board data whenever active project changes
+  useEffect(() => {
+    if (!user || !activeProjectId) return;
+    localStorage.setItem(`kanban_active_project_${user}`, activeProjectId);
     setIsLoadingBoard(true);
 
-    const localCached = localStorage.getItem(`kanban_board_${user}`);
+    const localCached = localStorage.getItem(`kanban_board_${user}_${activeProjectId}`);
     if (localCached) {
       try {
         const parsed = JSON.parse(localCached);
@@ -59,28 +152,102 @@ export const KanbanBoard = () => {
       }
     }
 
-    fetchBoard(user)
+    fetchBoard(user, activeProjectId)
       .then((data) => {
         if (data && data.columns && data.columns.length > 0) {
-          setBoard(data);
-          localStorage.setItem(`kanban_board_${user}`, JSON.stringify(data));
+          resetBoard(data);
+          localStorage.setItem(`kanban_board_${user}_${activeProjectId}`, JSON.stringify(data));
         }
       })
       .finally(() => {
         setIsLoadingBoard(false);
       });
-  }, [user]);
+
+    fetchProjectMembers(activeProjectId, user).then((res) => {
+      setUserRole(res.userRole || "viewer");
+    });
+  }, [user, activeProjectId, resetBoard]);
 
   const persistBoard = useCallback(
     async (nextBoard: BoardData) => {
       if (!user) return;
-      localStorage.setItem(`kanban_board_${user}`, JSON.stringify(nextBoard));
+      localStorage.setItem(
+        `kanban_board_${user}_${activeProjectId || "default"}`,
+        JSON.stringify(nextBoard)
+      );
       setIsSyncing(true);
-      await saveBoard(user, nextBoard);
+      await saveBoard(user, nextBoard, activeProjectId || undefined);
       setIsSyncing(false);
     },
-    [user]
+    [user, activeProjectId]
   );
+
+  // Keyboard Shortcuts for Undo (Ctrl+Z) and Redo (Ctrl+Y / Ctrl+Shift+Z)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const targetTag = (e.target as HTMLElement)?.tagName;
+      if (["INPUT", "TEXTAREA", "SELECT"].includes(targetTag)) return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        if (e.shiftKey) {
+          e.preventDefault();
+          if (canRedo) {
+            const next = redo();
+            if (next) persistBoard(next);
+          }
+        } else {
+          e.preventDefault();
+          if (canUndo) {
+            const prev = undo();
+            if (prev) persistBoard(prev);
+          }
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        if (canRedo) {
+          const next = redo();
+          if (next) persistBoard(next);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [canUndo, canRedo, undo, redo, persistBoard]);
+
+  const handleCreateProject = async (name: string) => {
+    const activeUser = user || localStorage.getItem("auth_user") || "user";
+    const newProj = await createProjectApi(activeUser, name);
+    if (newProj && newProj.id) {
+      setProjects((prev) => {
+        const exists = prev.some((p) => p.id === newProj.id);
+        return exists ? prev : [...prev, newProj];
+      });
+      setActiveProjectId(newProj.id);
+      localStorage.setItem(`kanban_active_project_${activeUser}`, newProj.id);
+    }
+  };
+
+  const handleRenameProject = async (projId: string, name: string) => {
+    const activeUser = user || localStorage.getItem("auth_user") || "user";
+    const updated = await updateProjectApi(activeUser, projId, name);
+    if (updated) {
+      setProjects((prev) => prev.map((p) => (p.id === projId ? updated : p)));
+    }
+  };
+
+  const handleDeleteProject = async (projId: string) => {
+    const activeUser = user || localStorage.getItem("auth_user") || "user";
+    const ok = await deleteProjectApi(activeUser, projId);
+    if (ok) {
+      const remaining = projects.filter((p) => p.id !== projId);
+      setProjects(remaining);
+      if (remaining.length > 0) {
+        setActiveProjectId(remaining[0].id);
+        localStorage.setItem(`kanban_active_project_${activeUser}`, remaining[0].id);
+      }
+    }
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -98,39 +265,20 @@ export const KanbanBoard = () => {
 
   const cardsById = useMemo(() => board.cards, [board.cards]);
 
-  // Priority and search filters
+  const availableTags = useMemo(() => extractAvailableTags(board.cards), [board.cards]);
+
   const filteredBoard = useMemo(() => {
-    if (!searchQuery.trim() && priorityFilter === "all") {
-      return board;
-    }
+    return filterAndSortBoard(board, filters, sortOption);
+  }, [board, filters, sortOption]);
 
-    const q = searchQuery.toLowerCase().trim();
-    const matchingCards: Record<string, Card> = {};
+  const activeFilterCount = useMemo(() => {
+    return getActiveFilterCount(filters, sortOption);
+  }, [filters, sortOption]);
 
-    for (const [id, card] of Object.entries(board.cards)) {
-      const matchesSearch =
-        !q ||
-        card.title.toLowerCase().includes(q) ||
-        (card.details && card.details.toLowerCase().includes(q));
-      const matchesPriority =
-        priorityFilter === "all" || (card.priority || "medium") === priorityFilter;
-
-      if (matchesSearch && matchesPriority) {
-        matchingCards[id] = card;
-      }
-    }
-
-    const filteredCols = board.columns.map((col) => ({
-      ...col,
-      cardIds: col.cardIds.filter((id) => Boolean(matchingCards[id])),
-    }));
-
-    return {
-      ...board,
-      columns: filteredCols,
-      cards: matchingCards,
-    };
-  }, [board, searchQuery, priorityFilter]);
+  const handleResetFilters = useCallback(() => {
+    setFilters(defaultFilterOptions);
+    setSortOption(defaultSortOption);
+  }, []);
 
   const totalTasks = useMemo(() => Object.keys(board.cards).length, [board.cards]);
 
@@ -154,6 +302,9 @@ export const KanbanBoard = () => {
       });
       if (response.ok) {
         const data = await response.json();
+        setProjects([]);
+        setActiveProjectId(null);
+        setBoard(initialData);
         localStorage.setItem("pm_auth_user", data.user);
         setUser(data.user);
         return true;
@@ -163,6 +314,9 @@ export const KanbanBoard = () => {
     }
 
     if (username === "user" && password === "password") {
+      setProjects([]);
+      setActiveProjectId(null);
+      setBoard(initialData);
       localStorage.setItem("pm_auth_user", username);
       setUser(username);
       return true;
@@ -178,6 +332,9 @@ export const KanbanBoard = () => {
       // Ignore network failure on logout
     }
     localStorage.removeItem("pm_auth_user");
+    setProjects([]);
+    setActiveProjectId(null);
+    setBoard(initialData);
     setUser(null);
   };
 
@@ -216,12 +373,21 @@ export const KanbanBoard = () => {
 
   const handleAddCard = (columnId: string, title: string, details: string) => {
     const id = createId("card");
+    const now = new Date().toISOString();
     setBoard((prev) => {
       const nextBoard = {
         ...prev,
         cards: {
           ...prev.cards,
-          [id]: { id, title, details: details || "No details yet.", priority: "medium" as const },
+          [id]: {
+            id,
+            title,
+            details: details || "No details yet.",
+            description: details || "No details yet.",
+            priority: "medium" as const,
+            createdAt: now,
+            updatedAt: now,
+          },
         },
         columns: prev.columns.map((column) =>
           column.id === columnId
@@ -256,25 +422,61 @@ export const KanbanBoard = () => {
     });
   };
 
-  const handleSaveCard = (
+  const handleSaveCard = async (
     cardId: string,
     title: string,
     details: string,
-    priority: "high" | "medium" | "low"
+    priority: "high" | "medium" | "low",
+    dueDate?: string | null,
+    tags?: string[],
+    assignee?: string | null
   ) => {
+    const now = new Date().toISOString();
+    let nextBoardData: BoardData | null = null;
+
     setBoard((prev) => {
       const card = prev.cards[cardId];
       if (!card) return prev;
-      const nextBoard = {
+      const updatedCard: Card = {
+        ...card,
+        title,
+        details,
+        description: details,
+        priority,
+        dueDate: dueDate !== undefined ? dueDate : card.dueDate,
+        tags: tags !== undefined ? tags : card.tags,
+        assignee: assignee !== undefined ? assignee : card.assignee,
+        updatedAt: now,
+      };
+      nextBoardData = {
         ...prev,
         cards: {
           ...prev.cards,
-          [cardId]: { ...card, title, details, priority },
+          [cardId]: updatedCard,
         },
       };
-      persistBoard(nextBoard);
-      return nextBoard;
+      if (user && activeProjectId) {
+        localStorage.setItem(
+          `kanban_board_${user}_${activeProjectId}`,
+          JSON.stringify(nextBoardData)
+        );
+      }
+      return nextBoardData;
     });
+
+    await updateCardApi(cardId, {
+      title,
+      details,
+      description: details,
+      priority,
+      dueDate,
+      tags,
+      assignee,
+    });
+
+    if (user && nextBoardData) {
+      await saveBoard(user, nextBoardData, activeProjectId || undefined);
+    }
   };
 
   const handleResetBoard = async () => {
@@ -339,15 +541,22 @@ export const KanbanBoard = () => {
         </div>
       )}
 
-      <main className="relative mx-auto flex min-h-screen max-w-[1600px] flex-col gap-8 px-6 pb-16 pt-10">
+      <main className="relative mx-auto flex min-h-screen max-w-[1600px] flex-col gap-6 sm:gap-8 px-3 sm:px-6 pb-12 sm:pb-16 pt-4 sm:pt-10 w-full max-w-full overflow-x-hidden">
         {/* Header Section */}
-        <header className="flex flex-col gap-6 rounded-[36px] border border-[var(--stroke)] bg-[var(--card-bg)]/80 p-8 shadow-[var(--shadow)] backdrop-blur-xl">
-          <div className="flex flex-wrap items-center justify-between gap-6">
-            <div>
-              <div className="flex items-center gap-3">
-                <span className="flex h-2 w-2 rounded-full bg-[var(--accent-yellow)] animate-pulse" />
-                <span className="text-xs font-bold uppercase tracking-[0.35em] text-[var(--gray-text)]">
-                  Workspace by YASH
+        <header className="flex flex-col gap-6 rounded-2xl sm:rounded-[36px] border border-[var(--stroke)] bg-[var(--card-bg)]/80 p-4 sm:p-8 shadow-[var(--shadow)] backdrop-blur-xl w-full max-w-full overflow-hidden">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 w-full max-w-full">
+            <div className="w-full lg:w-auto">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                <ProjectSwitcher
+                  projects={projects}
+                  activeProjectId={activeProjectId}
+                  onSelectProject={setActiveProjectId}
+                  onCreateProject={handleCreateProject}
+                  onRenameProject={handleRenameProject}
+                  onDeleteProject={handleDeleteProject}
+                />
+                <span className="rounded-full border border-[var(--stroke)] bg-[var(--surface-strong)] px-3 py-1 text-xs font-bold uppercase tracking-wider text-[var(--navy-dark)] shadow-sm">
+                  Workspace by YASH 🐐
                 </span>
                 <span className="rounded-full bg-[var(--primary-blue)]/10 px-3 py-0.5 text-xs font-bold text-[var(--primary-blue)]">
                   {totalTasks} Total Tasks
@@ -358,36 +567,101 @@ export const KanbanBoard = () => {
                   </span>
                 )}
               </div>
-              <h1 className="mt-2 font-display text-4xl sm:text-5xl font-extrabold tracking-tight text-[var(--navy-dark)]">
-                Drag N Drop
+              <h1 className="mt-2 font-display text-3xl sm:text-5xl font-extrabold tracking-tight bg-gradient-to-r from-[var(--navy-dark)] via-[var(--primary-blue)] to-[var(--secondary-purple)] bg-clip-text text-transparent">
+                Drag N Drop <span className="inline-block animate-bounce text-2xl sm:text-4xl">✨</span>
               </h1>
-              <p className="mt-2 max-w-xl text-sm leading-relaxed text-[var(--gray-text)]">
+              <p className="mt-2 max-w-xl text-xs sm:text-sm leading-relaxed text-[var(--gray-text)]">
                 Organize, track, and automate your project workflow seamlessly with interactive drag-and-drop boards and smart AI automation.
               </p>
             </div>
 
-            <div className="flex flex-col items-end gap-4">
-              <div className="flex items-center gap-3">
+            <div className="flex flex-col sm:items-end gap-3 w-full lg:w-auto">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const prev = undo();
+                    if (prev) persistBoard(prev);
+                  }}
+                  disabled={!canUndo}
+                  className="inline-flex items-center gap-1 rounded-full border border-[var(--stroke)] bg-[var(--surface-strong)] px-3 py-2 text-xs font-bold text-[var(--navy-dark)] shadow-sm transition hover:bg-[var(--stroke)] disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Undo (Ctrl+Z)"
+                  aria-label="Undo"
+                >
+                  <span>↩️</span>
+                  <span className="hidden sm:inline">Undo</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = redo();
+                    if (next) persistBoard(next);
+                  }}
+                  disabled={!canRedo}
+                  className="inline-flex items-center gap-1 rounded-full border border-[var(--stroke)] bg-[var(--surface-strong)] px-3 py-2 text-xs font-bold text-[var(--navy-dark)] shadow-sm transition hover:bg-[var(--stroke)] disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Redo (Ctrl+Y)"
+                  aria-label="Redo"
+                >
+                  <span>↪️</span>
+                  <span className="hidden sm:inline">Redo</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsMembersModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[var(--stroke)] bg-[var(--surface-strong)] px-3 py-2 text-xs font-bold text-[var(--navy-dark)] shadow-sm transition hover:bg-[var(--stroke)] focus:outline-none"
+                  aria-label="Team Members"
+                >
+                  <span>👥</span>
+                  <span>Members</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsNotificationsOpen(true)}
+                  className="relative inline-flex items-center gap-1.5 rounded-full border border-[var(--stroke)] bg-[var(--surface-strong)] px-3 py-2 text-xs font-bold text-[var(--navy-dark)] shadow-sm transition hover:bg-[var(--stroke)] focus:outline-none"
+                  aria-label="Notifications"
+                >
+                  <span>🔔</span>
+                  <span>Alerts</span>
+                  {unreadNotifCount > 0 && (
+                    <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-extrabold text-white">
+                      {unreadNotifCount}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsActivityModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[var(--stroke)] bg-[var(--surface-strong)] px-3 py-2 text-xs font-bold text-[var(--navy-dark)] shadow-sm transition hover:bg-[var(--stroke)] focus:outline-none"
+                  aria-label="Activity Log"
+                >
+                  <span>📜</span>
+                  <span>Activity Log</span>
+                </button>
                 <ThemeToggle />
-                <div className="flex items-center gap-3 rounded-full border border-[var(--stroke)] bg-[var(--surface-strong)] px-4 py-2 shadow-sm">
-                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-xs font-bold uppercase tracking-wider text-[var(--navy-dark)]">
+                <div className="flex flex-wrap items-center gap-2 rounded-2xl sm:rounded-full border border-[var(--stroke)] bg-[var(--surface-strong)] px-3 py-2 sm:px-4 sm:py-2 shadow-sm text-xs max-w-full">
+                  <span
+                    className={`h-2.5 w-2.5 rounded-full ${
+                      isWsConnected ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
+                    }`}
+                    title={isWsConnected ? "Live Sync Active" : "Reconnecting..."}
+                  />
+                  <span className="font-bold uppercase tracking-wider text-[var(--navy-dark)]">
                     {user}
                   </span>
-                  <span className="text-xs font-semibold text-[var(--gray-text)] border-l border-[var(--stroke)] pl-3">
-                    {isSyncing ? "Syncing..." : isLoadingBoard ? "Loading..." : "Saved"}
+                  <span className="font-semibold text-[var(--gray-text)] border-l border-[var(--stroke)] pl-2 sm:pl-3">
+                    {isSyncing ? "Syncing..." : isWsConnected ? "Live Sync" : "Saved"}
                   </span>
                   <button
                     type="button"
                     onClick={handleResetBoard}
-                    className="ml-1 rounded-full border border-[var(--stroke)] bg-[var(--surface)] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[var(--navy-dark)] transition hover:bg-[var(--primary-blue)] hover:text-white"
+                    className="ml-1 rounded-full border border-[var(--stroke)] bg-[var(--surface)] px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-[var(--navy-dark)] transition hover:bg-[var(--primary-blue)] hover:text-white"
                   >
                     Reset Board
                   </button>
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="ml-1 rounded-full bg-red-500/10 px-3 py-1 text-xs font-bold uppercase tracking-wide text-red-600 transition hover:bg-red-500 hover:text-white"
+                    className="ml-1 rounded-full bg-red-500/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-red-600 transition hover:bg-red-500 hover:text-white"
                   >
                     Logout
                   </button>
@@ -395,7 +669,7 @@ export const KanbanBoard = () => {
               </div>
 
               {/* Progress Metric Card */}
-              <div className="w-64 rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-3.5 shadow-sm">
+              <div className="w-full sm:w-64 rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-3.5 shadow-sm">
                 <div className="flex items-center justify-between text-xs font-bold text-[var(--navy-dark)]">
                   <span>Sprint Progress</span>
                   <span className="text-[var(--primary-blue)]">{completionPercentage}%</span>
@@ -410,53 +684,18 @@ export const KanbanBoard = () => {
             </div>
           </div>
 
-          {/* Search Bar & Priority Filter Toolbar */}
-          <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-[var(--stroke)]">
-            <div className="flex flex-1 items-center gap-3 max-w-md rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] px-4 py-2.5 shadow-2xs">
-              <span className="text-sm opacity-60">🔍</span>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search tasks by title or details..."
-                className="w-full bg-transparent text-xs font-medium text-[var(--navy-dark)] outline-none placeholder:text-[var(--gray-text)]"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery("")}
-                  className="text-xs text-[var(--gray-text)] hover:text-[var(--navy-dark)]"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-[var(--gray-text)] mr-1">
-                Priority:
-              </span>
-              {(["all", "high", "medium", "low"] as const).map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setPriorityFilter(p)}
-                  className={`rounded-xl px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition ${
-                    priorityFilter === p
-                      ? p === "high"
-                        ? "bg-red-500 text-white shadow-md"
-                        : p === "medium"
-                        ? "bg-amber-500 text-white shadow-md"
-                        : p === "low"
-                        ? "bg-emerald-500 text-white shadow-md"
-                        : "bg-[var(--navy-dark)] text-white shadow-md"
-                      : "border border-[var(--stroke)] bg-[var(--surface)] text-[var(--gray-text)] hover:text-[var(--navy-dark)]"
-                  }`}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
+          {/* Task Discovery: Search, Filtering & Sorting Toolbar */}
+          <div className="pt-4 border-t border-[var(--stroke)]">
+            <TaskFilterToolbar
+              columns={board.columns}
+              availableTags={availableTags}
+              filters={filters}
+              sort={sortOption}
+              activeCount={activeFilterCount}
+              onFilterChange={setFilters}
+              onSortChange={setSortOption}
+              onReset={handleResetFilters}
+            />
           </div>
         </header>
 
@@ -467,17 +706,18 @@ export const KanbanBoard = () => {
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         >
-          <section className="grid gap-6 lg:grid-cols-5">
+          <section className="mobile-snap-scroll grid gap-6 lg:grid-cols-5 pb-4 lg:pb-0">
             {filteredBoard.columns.map((column) => (
-              <KanbanColumn
-                key={column.id}
-                column={column}
-                cards={column.cardIds.map((cardId) => filteredBoard.cards[cardId]).filter(Boolean)}
-                onRename={handleRenameColumn}
-                onAddCard={handleAddCard}
-                onDeleteCard={handleDeleteCard}
-                onEditCard={(card) => setEditingCard(card)}
-              />
+              <div key={column.id} className="mobile-snap-column">
+                <KanbanColumn
+                  column={column}
+                  cards={column.cardIds.map((cardId) => filteredBoard.cards[cardId]).filter(Boolean)}
+                  onRename={handleRenameColumn}
+                  onAddCard={handleAddCard}
+                  onDeleteCard={handleDeleteCard}
+                  onEditCard={(card) => setEditingCard(card)}
+                />
+              </div>
             ))}
           </section>
           <DragOverlay>
@@ -489,8 +729,23 @@ export const KanbanBoard = () => {
           </DragOverlay>
         </DndContext>
 
-        <footer className="mt-8 text-center text-xs font-semibold uppercase tracking-[0.25em] text-[var(--gray-text)]">
-          Designed & Built with ❤️ by <span className="text-[var(--primary-blue)] font-bold">YASH</span>
+        <footer className="mt-12 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-[var(--stroke)] pt-6 text-xs text-[var(--gray-text)]">
+          <div className="flex items-center gap-2 font-semibold">
+            <span>⚡ Designed & Engineered with 🔥 & AI for</span>
+            <span className="inline-flex items-center gap-1 font-extrabold text-[var(--navy-dark)] px-3 py-1 rounded-full bg-[var(--surface-strong)] border border-[var(--stroke)] shadow-sm">
+              YASH 🐐
+            </span>
+          </div>
+          <div className="flex items-center gap-3 font-medium">
+            <span className="rounded-full bg-[var(--primary-blue)]/10 px-3 py-0.5 text-[11px] font-bold text-[var(--primary-blue)]">
+              ✨ Kanban Studio Pro v1.0 🐐
+            </span>
+            <span>•</span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Production Ready</span>
+            </span>
+          </div>
         </footer>
       </main>
 
@@ -504,9 +759,35 @@ export const KanbanBoard = () => {
         />
       )}
 
+      {/* Activity History Modal */}
+      <ActivityHistoryModal
+        isOpen={isActivityModalOpen}
+        onClose={() => setIsActivityModalOpen(false)}
+        projectId={activeProjectId}
+        projectName={projects.find((p) => p.id === activeProjectId)?.name || "Main Project"}
+        username={user || "user"}
+      />
+
+      {/* Project Members Modal */}
+      <ProjectMembersModal
+        projectId={activeProjectId || "default"}
+        currentUsername={user || "user"}
+        isOpen={isMembersModalOpen}
+        onClose={() => setIsMembersModalOpen(false)}
+      />
+
+      {/* Notifications Modal */}
+      <NotificationCenterModal
+        username={user || "user"}
+        isOpen={isNotificationsOpen}
+        onClose={() => setIsNotificationsOpen(false)}
+        onNotificationsChanged={refreshNotifications}
+      />
+
       {/* Floating Bottom-Right AI Assistant Widget */}
       <AIAssistantWidget
         board={board}
+        projectId={activeProjectId}
         onBoardUpdate={handleBoardUpdateFromAI}
       />
     </div>

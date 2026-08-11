@@ -65,7 +65,7 @@ Respond ONLY with a valid JSON object matching this schema:
   "reply": "Your friendly and helpful text message response to the user.",
   "board_update": null OR {
     "columns": [ ... updated list of columns with cardIds ... ],
-    "cards": { ... updated card dictionary mapping cardId to {id, title, details, priority} ... }
+    "cards": { ... updated card dictionary mapping cardId to {id, title, details, description, priority, dueDate, tags, assignee} ... }
   }
 }
 
@@ -248,7 +248,11 @@ def smart_local_nlp(user_message: str, board_data: dict) -> dict:
             "id": new_id,
             "title": title,
             "details": "Created by AI Assistant.",
+            "description": "Created by AI Assistant.",
             "priority": "high" if "urgent" in lower or "priority" in lower else "medium",
+            "dueDate": None,
+            "tags": ["AI"],
+            "assignee": None,
         }
 
         updated_cols = []
@@ -263,16 +267,80 @@ def smart_local_nlp(user_message: str, board_data: dict) -> dict:
             "board_update": {"columns": updated_cols, "cards": cards},
         }
 
-    # Intent 5: STATUS / SUMMARY / COUNT / HELP
-    if any(k in lower for k in ["status", "summary", "count", "overview", "help", "list", "what can you do"]):
-        counts = [f"**{c['title']}**: {len(c['cardIds'])}" for c in columns]
-        return {
-            "reply": f"📊 **Kanban Studio Summary**\nTotal Cards: **{len(cards)}**\n• " + "\n• ".join(counts) + "\n\n💡 *Tip: Try asking me 'Clear a card from In Progress', 'Move card-1 to Done', or 'Add task Code Review to Backlog'.*",
-            "board_update": None,
-        }
+    # Intent 5: PROJECT SUMMARY / INTELLIGENCE
+    if any(k in lower for k in ["summary", "summarize", "overview", "health", "progress"]):
+        total_tasks = len(cards)
+        done_col = next((c for c in columns if "done" in c["title"].lower() or "complete" in c["title"].lower()), None)
+        done_count = len(done_col["cardIds"]) if done_col else 0
+        pct = round((done_count / total_tasks * 100)) if total_tasks > 0 else 0
+        high_prio = sum(1 for c in cards.values() if c.get("priority") == "high")
+
+        counts = [f"• **{c['title']}**: {len(c.get('cardIds', []))} tasks" for c in columns]
+        summary_text = (
+            f"📊 **Project Intelligence Summary**\n\n"
+            f"• **Total Tasks**: {total_tasks}\n"
+            f"• **Completed**: {done_count} ({pct}% completion)\n"
+            f"• **High Priority**: {high_prio} tasks\n\n"
+            f"**Column Breakdown:**\n" + "\n".join(counts) + "\n\n"
+            f"💡 *Recommendation:* Focus on clearing high-priority tasks in In Progress to maintain momentum."
+        )
+        return {"reply": summary_text, "board_update": None}
+
+    # Intent 6: WORKLOAD ANALYSIS
+    if any(k in lower for k in ["workload", "assignee", "capacity", "team"]):
+        assignee_map = {}
+        unassigned = 0
+        for card in cards.values():
+            assignee = card.get("assignee")
+            if assignee:
+                assignee_map[assignee] = assignee_map.get(assignee, 0) + 1
+            else:
+                unassigned += 1
+
+        workload_lines = [f"• **@{user}**: {cnt} task(s)" for user, cnt in assignee_map.items()]
+        if unassigned > 0:
+            workload_lines.append(f"• **Unassigned**: {unassigned} task(s)")
+
+        workload_text = (
+            f"👥 **Workload Distribution Analysis**\n\n"
+            + ("\n".join(workload_lines) if workload_lines else "No tasks assigned yet.") +
+            f"\n\n💡 *Insight:* Ensure tasks are balanced across team members to prevent individual burnout."
+        )
+        return {"reply": workload_text, "board_update": None}
+
+    # Intent 7: OVERDUE & DEADLINES
+    if any(k in lower for k in ["overdue", "due", "deadline", "schedule"]):
+        due_list = []
+        for card in cards.values():
+            if card.get("dueDate"):
+                due_list.append(f"• **'{card.get('title')}'** — Due {card.get('dueDate')} ({card.get('priority', 'medium')} priority)")
+
+        due_text = (
+            f"⏰ **Upcoming & Overdue Task Analysis**\n\n"
+            + ("\n".join(due_list) if due_list else "No scheduled deadlines found on active cards.") +
+            f"\n\n💡 *Action:* Review due dates regularly in the task details editor."
+        )
+        return {"reply": due_text, "board_update": None}
+
+    # Intent 8: ORGANIZATION & PRIORITIZATION
+    if any(k in lower for k in ["organize", "organization", "prioritize", "suggest", "suggestion", "clean"]):
+        high_backlog = 0
+        backlog_col = columns[0] if columns else None
+        if backlog_col:
+            for cid in backlog_col.get("cardIds", []):
+                if cards.get(cid, {}).get("priority") == "high":
+                    high_backlog += 1
+
+        suggest_text = (
+            f"⚡ **Project Organization Recommendations**\n\n"
+            f"1. **High Priority in Backlog**: {high_backlog} urgent task(s) waiting in Backlog.\n"
+            f"2. **Column Balance**: Recommend keeping 'In Progress' capped at 3-5 tasks for optimal flow.\n"
+            f"3. **Tagging**: Ensure all active tasks have descriptive tags for fast filtering."
+        )
+        return {"reply": suggest_text, "board_update": None}
 
     return {
-        "reply": f"I processed your prompt: *\"{user_message}\"*. Ask me to clear, move, or create cards across your columns!",
+        "reply": f"I processed your prompt: *\"{user_message}\"*. Ask me to summarize project, analyze workload, check overdue tasks, or move cards!",
         "board_update": None,
     }
 
@@ -302,31 +370,34 @@ async def chat_with_ai(user_message: str, history: list, board_data: dict):
         "response_format": {"type": "json_object"},
     }
 
-    async with httpx.AsyncClient(timeout=25.0) as client:
-        try:
-            response = await client.post(
-                config.OPENROUTER_URL, headers=headers, json=payload
-            )
-            response.raise_for_status()
-            data = response.json()
-            content = (
-                data.get("choices", [{}])[0]
-                .get("message", {})
-                .get("content", "")
-                .strip()
-            )
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        for attempt in range(2):
+            try:
+                response = await client.post(
+                    config.OPENROUTER_URL, headers=headers, json=payload
+                )
+                response.raise_for_status()
+                data = response.json()
+                content = (
+                    data.get("choices", [{}])[0]
+                    .get("message", {})
+                    .get("content", "")
+                    .strip()
+                )
 
-            if content.startswith("```json"):
-                content = content[7:]
-            if content.endswith("```"):
-                content = content[:-3]
-            content = content.strip()
+                if content.startswith("```json"):
+                    content = content[7:]
+                if content.endswith("```"):
+                    content = content[:-3]
+                content = content.strip()
 
-            parsed = json.loads(content)
-            return {
-                "reply": parsed.get("reply", "I processed your request."),
-                "board_update": parsed.get("board_update"),
-            }
-        except Exception as e:
-            logger.error(f"OpenRouter chat error: {str(e)}")
-            return smart_local_nlp(user_message, board_data)
+                parsed = json.loads(content)
+                return {
+                    "reply": parsed.get("reply", "I processed your request."),
+                    "board_update": parsed.get("board_update"),
+                }
+            except Exception as e:
+                logger.warning(f"OpenRouter attempt {attempt + 1} failed: {str(e)}")
+                if attempt == 1:
+                    logger.error(f"OpenRouter chat error after retries: {str(e)}")
+                    return smart_local_nlp(user_message, board_data)
