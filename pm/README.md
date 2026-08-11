@@ -126,7 +126,7 @@ The application will be accessible at **[http://localhost:8000](http://localhost
 
 ## 🧪 Testing Suite
 
-### 1. Backend Pytest Tests (22 Tests)
+### 1. Backend Pytest Tests (38 Tests)
 ```bash
 cd backend
 python -m pytest

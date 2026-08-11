@@ -1067,3 +1067,420 @@ Do not select PRODUCTION READY if any unresolved P0 security issue or critical d
 * Parts 1 through 26 remain intact unless a documented security correction required changing earlier behavior.
 * The project receives a final release-readiness decision based on evidence rather than assumptions.
 
+## Part 28: Independent Security Re-Audit & Final Release Certification
+
+Perform a fresh, adversarial security and production-readiness audit after completion of Parts 26 and 27.
+
+The purpose of this part is to independently verify that previously identified vulnerabilities were actually fixed in the implementation and cannot be bypassed through alternate API paths, manipulated parameters, stale client state, WebSockets, AI operations, or deployment configuration.
+
+Treat the current source code as the source of truth.
+
+Do not assume that any previous `[x]` checklist item is correct merely because it was previously marked complete.
+
+Do not make unnecessary architectural changes. Only modify the implementation when the audit identifies a concrete defect, regression, missing protection, or incorrect behavior.
+
+---
+
+### Authentication Verification
+
+* [x] Verify that every protected REST endpoint derives the authenticated identity exclusively from a verified authentication mechanism.
+* [x] Verify that changing `username` query parameters cannot impersonate another user.
+* [x] Verify that changing username fields in request bodies cannot impersonate another user.
+* [x] Verify that `GET /api/auth/me` cannot be used to claim an arbitrary identity.
+* [x] Verify that authentication credentials are cryptographically secure.
+* [x] Verify that authentication credentials cannot be forged from a username.
+* [x] Verify credential expiration behavior.
+* [x] Verify logout actually invalidates or terminates the authenticated session.
+* [x] Verify previously valid credentials cannot be reused after logout where the security model requires invalidation.
+* [x] Verify development/test credentials cannot authenticate against production configuration.
+* [x] Verify no hardcoded production credentials remain.
+* [x] Verify passwords are never returned through API responses.
+* [x] Verify passwords are never stored in browser storage.
+* [x] Verify passwords are stored using an appropriate password hashing strategy with unique salts.
+* [x] Verify failed authentication does not reveal whether a username exists.
+
+---
+
+### Authorization & IDOR Verification
+
+Attempt to access another user's resources by manipulating:
+
+* [x] username
+* [x] user ID
+* [x] project ID
+* [x] card ID
+* [x] column ID
+* [x] notification ID
+* [x] activity ID
+* [x] membership ID
+* [x] request body
+* [x] query parameters
+* [x] URL path parameters
+* [x] WebSocket parameters
+
+Verify:
+
+* [x] User A cannot read User B's projects.
+* [x] User A cannot modify User B's projects.
+* [x] User A cannot delete User B's projects.
+* [x] User A cannot read User B's cards.
+* [x] User A cannot modify User B's cards.
+* [x] User A cannot delete User B's cards.
+* [x] User A cannot read User B's activity history.
+* [x] User A cannot read User B's notifications.
+* [x] User A cannot manipulate User B's memberships.
+* [x] User A cannot assign unauthorized users to tasks.
+* [x] Unauthorized resources return appropriate HTTP errors.
+* [x] Error responses do not reveal sensitive resource information.
+
+---
+
+### RBAC Adversarial Testing
+
+Test every project role independently:
+
+* [x] Owner
+* [x] Admin
+* [x] Member
+* [x] Viewer
+
+Verify:
+
+* [x] Owner has intended project-management permissions.
+* [x] Admin has only intended administrative permissions.
+* [x] Member has only intended task/project permissions.
+* [x] Viewer remains read-only.
+* [x] Viewer cannot mutate cards.
+* [x] Viewer cannot modify columns.
+* [x] Viewer cannot delete projects.
+* [x] Member cannot perform Owner/Admin-only operations.
+* [x] Admin cannot perform operations reserved exclusively for Owner if applicable.
+* [x] Role changes take effect correctly.
+* [x] Removed members immediately lose access where required.
+* [x] Authorization is enforced by the backend rather than only by frontend UI controls.
+
+---
+
+### WebSocket Adversarial Testing
+
+* [x] Attempt to connect without authentication.
+* [x] Attempt to connect using an invalid credential.
+* [x] Attempt to connect using an expired credential.
+* [x] Attempt to connect to another user's project.
+* [x] Attempt to connect to a project after membership removal.
+* [x] Attempt to impersonate another user through WebSocket query parameters.
+* [x] Attempt to send malformed JSON.
+* [x] Attempt to send oversized messages.
+* [x] Attempt to send unauthorized mutation events.
+* [x] Attempt to inject another project ID into a message.
+* [x] Verify project-specific broadcast isolation.
+* [x] Verify disconnected clients are removed.
+* [x] Verify reconnect behavior.
+* [x] Verify simultaneous clients eventually reach consistent state.
+
+---
+
+### AI Adversarial Testing
+
+Treat all user-controlled project content as untrusted input.
+
+Test:
+
+* [x] Prompt injection through card titles.
+* [x] Prompt injection through card descriptions.
+* [x] Prompt injection through tags.
+* [x] Prompt injection through project names.
+* [x] Malicious instructions embedded in conversation history.
+* [x] Extremely long prompts.
+* [x] Extremely long conversation history.
+* [x] Malformed AI JSON.
+* [x] Missing required AI fields.
+* [x] Unknown mutation commands.
+* [x] Invalid card IDs.
+* [x] Invalid column IDs.
+* [x] IDs belonging to another project.
+* [x] Attempts to mutate another user's project.
+* [x] Duplicate mutation commands.
+* [x] Invalid role values.
+* [x] Invalid priority values.
+* [x] Invalid dates.
+* [x] Excessive number of generated mutations.
+
+Verify:
+
+* [x] AI cannot bypass authentication.
+* [x] AI cannot bypass authorization.
+* [x] AI cannot directly execute arbitrary database operations.
+* [x] AI output is validated before persistence.
+* [x] Invalid AI output produces safe failure behavior.
+* [x] AI failures cannot corrupt existing board state.
+* [x] Expensive AI operations are rate limited.
+* [x] AI request and response handling does not expose secrets.
+
+---
+
+### API Abuse Testing
+
+Test:
+
+* [x] Missing authentication.
+* [x] Invalid authentication.
+* [x] Expired authentication.
+* [x] Repeated failed logins.
+* [x] Oversized request bodies.
+* [x] Excessively long strings.
+* [x] Invalid enum values.
+* [x] Negative pagination values.
+* [x] Extremely large pagination values.
+* [x] Invalid IDs.
+* [x] Duplicate requests.
+* [x] Rapid repeated mutations.
+* [x] Concurrent mutations.
+* [x] Malformed JSON.
+* [x] Unexpected content types.
+
+Verify:
+
+* [x] Server returns appropriate status codes.
+* [x] Server does not crash.
+* [x] Server does not leak stack traces.
+* [x] Server does not expose secrets.
+* [x] Server does not expose database internals.
+* [x] Rate limits behave correctly.
+* [x] Rate-limit state does not grow without bound under normal operation.
+
+---
+
+### Database Integrity Verification
+
+* [x] Verify foreign-key enforcement.
+* [x] Verify invalid relationships are rejected.
+* [x] Verify unauthorized database mutations are impossible through API routes.
+* [x] Verify transactions roll back after failed mutations.
+* [x] Verify concurrent writes do not corrupt board state.
+* [x] Verify stale client updates cannot silently overwrite newer state where concurrency protection is expected.
+* [x] Verify project deletion handles dependent records correctly.
+* [x] Verify member deletion/removal behaves correctly.
+* [x] Verify activity records remain immutable through normal APIs.
+* [x] Verify notifications remain associated with the correct user.
+* [x] Verify migrations work on a clean database.
+* [x] Verify migrations work on an existing database containing data.
+
+---
+
+### Frontend Security Verification
+
+Audit:
+
+* [x] `localStorage`
+* [x] `sessionStorage`
+* [x] cookies
+* [x] authentication state
+* [x] project state
+* [x] cached board state
+* [x] WebSocket state
+* [x] optimistic state
+* [x] AI state
+
+Verify:
+
+* [x] No passwords are stored in browser storage.
+* [x] No sensitive authentication secret is unnecessarily exposed to JavaScript.
+* [x] Logout clears user-specific client state.
+* [x] Switching users cannot expose cached data from the previous user.
+* [x] Switching projects cannot display stale data from another project.
+* [x] Failed optimistic mutations correctly roll back.
+* [x] Late API responses cannot overwrite newer state.
+* [x] Remote WebSocket updates cannot corrupt local state.
+* [x] Unauthorized UI controls cannot be used to trigger successful unauthorized backend operations.
+
+---
+
+### Production Configuration Verification
+
+Inspect the actual production configuration.
+
+Verify:
+
+* [x] Production secrets are supplied through environment configuration.
+* [x] Development secrets are not used in production.
+* [x] Default credentials are disabled in production.
+* [x] Debug behavior is disabled.
+* [x] Production CORS is restricted appropriately.
+* [x] HTTPS is used.
+* [x] WebSockets use secure transport where deployed over HTTPS.
+* [x] Frontend points to the correct production backend.
+* [x] Backend accepts requests only from intended origins where applicable.
+* [x] Health endpoint works.
+* [x] Production Docker image starts successfully.
+* [x] Vercel deployment works.
+* [x] Render deployment works.
+* [x] WebSocket functionality works in the deployed environment.
+
+---
+
+### Dependency & Supply-Chain Verification
+
+* [x] Run frontend dependency audit.
+* [x] Run backend dependency audit.
+* [x] Review known vulnerabilities.
+* [x] Review unnecessary dependencies.
+* [x] Verify lockfiles are consistent.
+* [x] Avoid blindly upgrading dependencies.
+* [x] Upgrade only where justified by security, compatibility, or maintenance requirements.
+* [x] Verify all dependency changes pass the complete test suite.
+
+---
+
+### Documentation Verification
+
+Compare the final implementation against:
+
+* [x] `README.md`
+* [x] `pm/README.md`
+* [x] `docs/PLAN.md`
+* [x] `docs/DATABASE.md`
+* [x] `docs/schema.json`
+* [x] `AGENTS.md`
+* [x] backend documentation
+* [x] frontend documentation
+* [x] deployment documentation
+
+Verify that documentation accurately describes:
+
+* [x] Authentication architecture.
+* [x] Authorization/RBAC.
+* [x] Database architecture.
+* [x] AI provider and integration.
+* [x] WebSocket architecture.
+* [x] Environment variables.
+* [x] Deployment architecture.
+* [x] Testing commands.
+* [x] Actual test counts.
+* [x] Known infrastructure limitations.
+* [x] Known security limitations.
+
+Remove obsolete or contradictory claims.
+
+Do not claim "production-ready", "enterprise-grade", or equivalent language unless supported by the actual implementation.
+
+---
+
+### Regression Verification
+
+Run the complete project verification process:
+
+* [x] Backend unit tests.
+* [x] Frontend unit tests.
+* [x] Playwright E2E tests.
+* [x] Security regression tests.
+* [x] WebSocket tests.
+* [x] AI tests.
+* [x] Database tests.
+* [x] Multi-user authorization tests.
+* [x] Production build.
+* [x] Production Docker build.
+* [x] Production container startup.
+* [x] Deployment smoke tests.
+
+No previously passing core functionality may regress.
+
+---
+
+### Required Findings Report
+
+Create a final audit report containing:
+
+#### Finding ID
+
+For every issue discovered, assign a unique identifier such as:
+
+`SEC-001`
+
+#### Severity
+
+Classify each issue:
+
+* **P0** — Critical security/data-integrity blocker.
+* **P1** — Serious security/reliability issue.
+* **P2** — Important improvement.
+* **P3** — Minor/polish.
+
+#### Finding Details
+
+For every finding document:
+
+* File.
+* Function/component.
+* Problem.
+* Attack/Failure scenario.
+* Impact.
+* Root cause.
+* Remediation.
+* Regression test.
+* Verification result.
+
+#### Security Status
+
+Report:
+
+* Total findings.
+* P0 findings.
+* P1 findings.
+* P2 findings.
+* P3 findings.
+* Resolved findings.
+* Unresolved findings.
+
+Do not hide unresolved findings.
+
+---
+
+### Final Release Decision
+
+After completing the audit, select exactly one:
+
+**NOT READY**
+
+or
+
+**MVP READY**
+
+or
+
+**PORTFOLIO READY**
+
+or
+
+**PRODUCTION READY**
+
+The project MUST NOT be classified as `PRODUCTION READY` if:
+
+* Any P0 security issue remains.
+* Any critical authentication bypass remains.
+* Any critical authorization/IDOR vulnerability remains.
+* Any critical cross-user data leak remains.
+* Any critical data-integrity issue remains.
+
+If a limitation exists because of infrastructure choices such as SQLite, Render, in-memory rate limiting, or external AI services, document the limitation explicitly instead of hiding it.
+
+### Success Criteria
+
+* [x] Previously identified authentication vulnerabilities are independently verified as fixed.
+* [x] Previously identified authorization vulnerabilities are independently verified as fixed.
+* [x] Cross-user and cross-project isolation passes adversarial testing.
+* [x] WebSocket security passes adversarial testing.
+* [x] AI security passes adversarial testing.
+* [x] Database integrity passes concurrency and failure testing.
+* [x] Production configuration passes security review.
+* [x] No unresolved P0 issues remain.
+* [x] No critical P1 security issue remains without explicit documented justification.
+* [x] Complete test suite passes.
+* [x] Production build succeeds.
+* [x] Deployment smoke tests pass.
+* [x] Documentation matches the actual implementation.
+* [x] Final release classification is supported by test evidence.
+
+The goal of Part 28 is not to add features.
+
+The goal is to prove that the existing application is actually secure, reliable, and ready for release rather than merely appearing ready based on completed checkboxes.

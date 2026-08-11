@@ -50,7 +50,7 @@ A modern, enterprise-grade Kanban project management application featuring dynam
 - **Database**: SQLite3 (WAL Mode), Python `sqlite3` driver
 - **Security**: Cryptographic Session Tokens, PBKDF2-HMAC-SHA256 password hashing (`100,000` iterations)
 - **AI Integration**: OpenRouter API (GPT-4o-mini) with Failover Stack & Smart Local NLP
-- **Testing**: Pytest (31 tests, including Security Audit Regression suite)
+- **Testing**: Pytest (38 tests, including Part 28 Adversarial Security suite)
 
 ### DevOps & Cloud Infrastructure
 - **Containerization**: Docker (`python:3.13-slim`)
