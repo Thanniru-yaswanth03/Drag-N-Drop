@@ -32,7 +32,7 @@
 | **AI Integration** | Rule Engine + Google Gemini API | Converts natural text prompts into structured JSON board mutation payloads. |
 | **Containerization** | Docker (`python:3.13-slim`) | Standardized Linux container packaging backend code and dependencies. |
 | **Cloud Hosting** | Render.com (Backend) & Vercel (Frontend) | Docker container API deployment on Render + Edge CDN distribution on Vercel. |
-| **Testing Suite** | Pytest (22), Vitest (44), Playwright (14) | 80 automated unit, component, integration, and E2E browser tests. |
+| **Testing Suite** | Pytest (39), Vitest (44), Playwright (14) | 97 automated unit, component, integration, data persistence, and E2E browser tests. |
 
 ---
 
@@ -45,7 +45,8 @@ Drag_N_Drop/
 ├── README.md                          # Project repository overview and live links
 ├── documentation/                     # Dedicated documentation folder
 │   ├── Kanban_Studio_Pro_Master_Documentation.pdf
-│   └── Kanban_Studio_Pro_Master_Documentation.md
+│   ├── Kanban_Studio_Pro_Master_Documentation.md
+│   └── generate_docs.py              # Automated master PDF & Markdown documentation generator
 └── pm/
     ├── backend/                       # Python FastAPI Backend Service
     │   ├── main.py                    # REST & WebSocket API endpoints
@@ -56,7 +57,7 @@ Drag_N_Drop/
     │   ├── pm.db                      # SQLite binary database file
     │   ├── requirements.txt           # Python dependencies (fastapi, uvicorn, pytest)
     │   ├── test_main.py               # Pytest suite for FastAPI REST endpoints
-    │   ├── test_database.py           # Pytest suite for SQLite database functions
+    │   ├── test_database.py           # Pytest suite for SQLite database functions & data persistence
     │   ├── test_ai.py                 # Pytest suite for AI assistant handler
     │   ├── test_schema.py             # Pytest suite for Pydantic schema validation
     │   └── test_security.py           # Pytest suite for RBAC & password security
@@ -83,7 +84,7 @@ Drag_N_Drop/
         │   │   ├── ProjectMembersModal.tsx # Project member management modal
         │   │   └── NotificationCenterModal.tsx # Notifications drawer modal
         │   └── lib/
-        │       ├── api.ts             # API client & getApiUrl helper
+        │       ├── api.ts             # API client & getApiUrl helper with Bearer token authentication
         │       ├── kanban.ts          # Board data structures & moveCard logic
         │       ├── filterUtils.ts     # Search, tag filter, and priority sorting utilities
         │       ├── useUndoRedo.ts     # Multi-level Undo (Ctrl+Z) & Redo (Ctrl+Y) hook
@@ -99,7 +100,12 @@ Drag_N_Drop/
 ### 🔑 Auth & Session Management
 - **Registration & Sign-In**: Users register with username and password. Usernames are automatically lower-cased and sanitized.
 - **Password Hashing**: Passwords are hashed with PBKDF2-HMAC-SHA256 (`100,000` iterations) and salted.
+- **Header Authentication**: Active sessions issue `secrets.token_hex(32)` tokens passed via `Authorization: Bearer` and `X-Session-Token` headers.
 - **Standalone Fallback**: If backend API is unreachable, local user accounts persist in `localStorage` (`pm_registered_users`).
+
+### 💾 Persistent Database State Engine
+- **Single Source of Truth**: Guaranteed SQLite database state loading on login and project switching, eliminating stale demo card overwrites.
+- **Decoupled Async Persistence**: Card operations (drag-and-drop, title edit, priority, due date) update React state cleanly and persist to backend SQLite tables.
 
 ### 📱 Responsive Mobile Layout & Touch Drag & Drop
 - **Vertical Mobile Stack**: On screens `< 1024px`, columns stack vertically (`flex flex-col gap-6 w-full`) to eliminate horizontal scrollbars.
@@ -115,10 +121,10 @@ Drag_N_Drop/
 
 ---
 
-## 5. Testing Architecture (96 Total Tests — 100% Pass Rate)
+## 5. Testing Architecture (97 Total Tests — 100% Pass Rate)
 
-1. **Pytest (38 Backend Tests)**: Verifies REST endpoints, database schema, PBKDF2 hashing, RBAC permissions, cryptographic session tokens, IDOR isolation, and Part 28 adversarial security scenarios.
-2. **Vitest (44 Frontend Tests)**: Tests React components, filter utilities, undo/redo state hooks, activity modals, notification center, project switcher, and auth form handlers.
+1. **Pytest (39 Backend Tests)**: Verifies REST endpoints, database schema, PBKDF2 hashing, RBAC permissions, cryptographic session tokens, persistent data loss verification (`test_card_persistence_across_logout_and_login`), IDOR isolation, and Part 28 adversarial security scenarios.
+2. **Vitest (44 Frontend Tests across 12 Suites)**: Tests React components, filter utilities, undo/redo state hooks, activity modals, notification center, project switcher, and auth form handlers.
 3. **Playwright (14 E2E Tests)**: Automates Chromium browser interactions covering sign-in, card dragging, filtering, mobile viewport rendering, and multi-user login workflows.
 
 ---
@@ -141,4 +147,5 @@ Vercel hosts the Next.js static bundle on an Edge CDN. The environment variable 
 - **Release Classification**: **`PRODUCTION READY`**
 - **Security Audit Status**: 0 Critical (P0) or High (P1) Vulnerabilities
 - **Part 28 Verification**: Passed independent adversarial security audit (`test_part28_adversarial_security.py`).
+- **Part 29 Verification**: Passed final production deployment, test suite execution (97 automated tests passing 100%), persistent data loss regression testing, master documentation sync, and repository GitHub release packaging.
 - **Part 29 Verification**: Passed final production deployment, test suite execution (96 automated tests passing 100%), master documentation sync, and repository GitHub release packaging.

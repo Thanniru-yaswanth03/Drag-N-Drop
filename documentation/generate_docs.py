@@ -166,10 +166,10 @@ def build_pdf(pdf_path):
         [Paragraph("Drag & Drop", body_style), Paragraph("@dnd-kit/core, @dnd-kit/sortable", body_style), Paragraph("Accessible, touch-friendly task reordering with MouseSensor, PointerSensor & TouchSensor (150ms delay).", body_style)],
         [Paragraph("Backend API", body_style), Paragraph("FastAPI, Python 3.13, Uvicorn ASGI Server", body_style), Paragraph("Asynchronous REST API endpoints, WebSocket connection manager, rate limiting, and CORS routing.", body_style)],
         [Paragraph("Database", body_style), Paragraph("SQLite3 (WAL Mode), Python sqlite3 module", body_style), Paragraph("Relational persistence for users, sessions, projects, columns, cards, member roles, activity logs, and notifications.", body_style)],
-        [Paragraph("Security", body_style), Paragraph("Cryptographic Session Tokens, PBKDF2 Hashing, RBAC Guard", body_style), Paragraph("secrets.token_hex(32) session tokens, logout revocation, IDOR prevention, and role hierarchy enforcement.", body_style)],
+        [Paragraph("Security & Auth", body_style), Paragraph("Cryptographic Session Tokens, Bearer / X-Session Headers, PBKDF2, RBAC Guard", body_style), Paragraph("secrets.token_hex(32) session tokens, Authorization Bearer headers, logout revocation, IDOR prevention, and RBAC hierarchy.", body_style)],
         [Paragraph("AI Assistant", body_style), Paragraph("OpenRouter API (GPT-4o-mini) + Model Failover Stack", body_style), Paragraph("Parses natural language prompts with failover (GPT-4o-mini -> Llama 3.3 70B -> Auto -> Smart Local NLP).", body_style)],
         [Paragraph("DevOps & Cloud", body_style), Paragraph("Docker, Render.com, Vercel, GitHub Actions", body_style), Paragraph("Containerized Python backend on Render + static Edge CDN frontend hosting on Vercel.", body_style)],
-        [Paragraph("Testing", body_style), Paragraph("Pytest (38), Vitest (44), Playwright E2E (14)", body_style), Paragraph("Comprehensive 96-test automated suite covering backend API, security audit, frontend UI, and E2E browser flows.", body_style)],
+        [Paragraph("Testing", body_style), Paragraph("Pytest (39), Vitest (44), Playwright E2E (14)", body_style), Paragraph("Comprehensive 97-test automated suite covering backend API, security audit, data persistence, frontend UI, and E2E browser flows.", body_style)],
     ]
     t = Table(tech_data, colWidths=[70, 190, 244])
     t.setStyle(TableStyle([
@@ -189,21 +189,22 @@ def build_pdf(pdf_path):
     file_items = [
         ("Dockerfile (Root)", "Multi-stage Python 3.13 container definition for building and running the FastAPI backend on cloud hosts (Render/Railway). Installs system dependencies, copies requirements, and launches uvicorn on port 8000."),
         ("render.yaml (Root)", "Render Blueprint deployment configuration file. Configures automatic container builds from root Dockerfile and passes CORS_ORIGINS and PORT environment variables."),
-        ("README.md (Root)", "Project documentation detailing live demo links, architecture overview, screenshot previews, and setup instructions."),
-        ("pm/backend/main.py", "FastAPI application entry point. Defines REST endpoints (/api/auth/register, /api/auth/login, /api/projects, /api/board, /api/cards, /api/ai/chat) and authenticated WebSocket route (/ws/projects/{id})."),
-        ("pm/backend/database.py", "Core SQLite database layer. Contains schema definitions, sessions table, PBKDF2 password hashing, RBAC permission checks (Owner, Admin, Member, Viewer, None), CRUD operations, and default board seeding."),
+        ("README.md (Root)", "Project documentation detailing live demo links, architecture overview, screenshot previews, data persistence guarantees, and setup instructions."),
+        ("pm/backend/main.py", "FastAPI application entry point. Defines REST endpoints (/api/auth/register, /api/auth/login, /api/projects, /api/board, /api/cards, /api/ai/chat) with header authentication and authenticated WebSocket route (/ws/projects/{id})."),
+        ("pm/backend/database.py", "Core SQLite database layer. Contains schema definitions, sessions table, PBKDF2 password hashing, RBAC permission checks (Owner, Admin, Member, Viewer, None), CRUD operations, project-member board updates, and default board seeding."),
         ("pm/backend/ai.py", "AI Assistant logic. Integrates OpenRouter API with model failover stack (gpt-4o-mini -> llama-3.3-70b -> auto -> smart local NLP) to execute structured board mutations."),
         ("pm/backend/websocket_manager.py", "ConnectionManager class managing real-time WebSocket client connections and broadcasting board updates to connected project members."),
         ("pm/backend/config.py", "Environment configuration loader with override=True for reading OPENROUTER_API_KEY, database paths, CORS origin lists, and API keys."),
-        ("pm/backend/requirements.txt", "Backend Python dependencies list (fastapi, uvicorn, pydantic, pytest, python-dotenv, httpx)."),
+        ("pm/backend/requirements.txt", "Backend Python dependencies list (fastapi, uvicorn, pydantic, pytest, python-dotenv, httpx, reportlab)."),
+        ("pm/backend/test_database.py", "Pytest database regression test suite including test_card_persistence_across_logout_and_login validating data preservation after user session logout/login cycles."),
         ("pm/backend/test_security_audit.py & test_part28_adversarial_security.py", "Pytest security regression test suite validating session token security, token revocation on logout, IDOR prevention, RBAC role restrictions, unauthenticated WebSocket rejection, and AI prompt injection resistance."),
-        ("pm/docs/FINAL_RELEASE_CERTIFICATION.md", "Final Release Certification report confirming PRODUCTION READY status backed by 82+ automated test passes."),
+        ("pm/docs/FINAL_RELEASE_CERTIFICATION.md & PLAN.md", "Final Release Certification & Part 29 implementation roadmap documenting complete architecture sign-off and 97 automated test passes."),
         ("pm/frontend/src/app/page.tsx & layout.tsx", "Next.js App Router root layout and primary page shell rendering the main Kanban interface."),
         ("pm/frontend/src/app/globals.css", "Global TailwindCSS v4 stylesheet containing modern theme CSS variables, glassmorphism card utilities, glowing animations, and vertical mobile column layout rules."),
-        ("pm/frontend/src/components/KanbanBoard.tsx", "Core frontend board orchestrator. Manages user auth state, project switcher, undo/redo history, WebSocket real-time sync, @dnd-kit sensors, and column grid."),
+        ("pm/frontend/src/components/KanbanBoard.tsx", "Core frontend board orchestrator. Manages user auth state, project switcher, undo/redo history, WebSocket real-time sync, @dnd-kit sensors, database single-source-of-truth loading, and column grid."),
         ("pm/frontend/src/components/AIAssistantWidget.tsx", "Floating AI Assistant chat drawer. Connects to /api/ai/chat via getApiUrl and automatically applies server-returned board updates."),
-        ("pm/frontend/src/components/LoginForm.tsx", "Sign-in and Create Account tabbed modal featuring auto-login, error alerts, case normalization, and fallback client registration."),
-        ("pm/frontend/src/lib/api.ts", "API client module exporting getApiUrl, fetchBoard, saveBoard, registerApi, and project management network handlers with Bearer token authentication."),
+        ("pm/frontend/src/components/LoginForm.tsx", "Sign-in and Create Account tabbed modal featuring token storage, error alerts, case normalization, and fallback client registration."),
+        ("pm/frontend/src/lib/api.ts", "API client module exporting getApiUrl, fetchBoard, saveBoard, registerApi, and project management network handlers with Bearer token & X-Session-Token authentication headers."),
         ("pm/frontend/src/lib/useUndoRedo.ts", "Custom React hook providing multi-level Undo (Ctrl+Z) and Redo (Ctrl+Y) state history management."),
         ("pm/frontend/tests/kanban.spec.ts", "Playwright E2E browser test suite (14 tests) running automated user interactions across desktop and mobile viewports."),
     ]
@@ -217,7 +218,8 @@ def build_pdf(pdf_path):
     story.append(Paragraph("4. Core Site Logic & Key Functionalities", h1_style))
     
     funcs = [
-        ("Authentication & Session Management", "Users sign in or register new accounts. Username strings are automatically sanitized and lower-cased. Passwords are salted and hashed using PBKDF2-HMAC-SHA256 (100,000 iterations). Active sessions issue secrets.token_hex(32) tokens, and logout revokes tokens in SQLite."),
+        ("Authentication & Session Management", "Users sign in or register new accounts. Username strings are automatically sanitized and lower-cased. Passwords are salted and hashed using PBKDF2-HMAC-SHA256 (100,000 iterations). Active sessions issue secrets.token_hex(32) tokens passed in Authorization: Bearer & X-Session-Token headers, and logout revokes tokens in SQLite."),
+        ("Persistent Database State Engine", "Guaranteed SQLite database persistence across login/logout sessions, project switching, and multi-user interactions. Eliminates stale pre-fetch demo card resets and uses DB state as single source of truth with clean loading states."),
         ("Multi-Project Isolation & IDOR Protection", "Users create, rename, switch between, and delete independent Kanban projects. Every backend API endpoint validates project permissions before allowing access or mutation."),
         ("Drag & Drop Engine (Desktop + Mobile)", "Powered by @dnd-kit. Features PointerSensor, MouseSensor, and TouchSensor (with a 150ms delay and 5px tolerance). On mobile screens, columns stack vertically to eliminate horizontal scroll issues."),
         ("Security & RBAC Enforcement", "Backend endpoints enforce role hierarchy checks (Owner > Admin > Member > Viewer > None). Card mutations verify user membership before executing SQLite updates."),
@@ -232,13 +234,13 @@ def build_pdf(pdf_path):
     story.append(Spacer(1, 10))
 
     # Testing Methodology
-    story.append(Paragraph("5. Complete Testing Methodology (96 Automated Tests)", h1_style))
+    story.append(Paragraph("5. Complete Testing Methodology (97 Automated Tests)", h1_style))
     story.append(Paragraph(
-        "The application is validated by an automated test suite comprising <b>96 total tests</b> across 3 distinct test runners:",
+        "The application is validated by an automated test suite comprising <b>97 total tests</b> across 3 distinct test runners:",
         body_style
     ))
-    story.append(Paragraph("• <b>Pytest (38 Tests)</b>: Validates backend REST routes, SQLite database schemas, PBKDF2 password hashing, cryptographic session tokens, RBAC permission checks, IDOR isolation, AI prompt injection resistance, and Part 28 adversarial security scenarios.", bullet_style))
-    story.append(Paragraph("• <b>Vitest (44 Tests)</b>: Unit tests frontend helper utilities (filterAndSortBoard, moveCard, useUndoRedo) and React UI components (LoginForm, TaskFilterToolbar, ProjectSwitcher).", bullet_style))
+    story.append(Paragraph("• <b>Pytest (39 Tests)</b>: Validates backend REST routes, SQLite database schemas, PBKDF2 password hashing, cryptographic session tokens, persistent card/board data preservation across sessions (test_card_persistence_across_logout_and_login), RBAC permission checks, IDOR isolation, AI prompt injection resistance, and Part 28 adversarial security scenarios.", bullet_style))
+    story.append(Paragraph("• <b>Vitest (44 Tests across 12 Suites)</b>: Unit tests frontend helper utilities (filterAndSortBoard, moveCard, useUndoRedo) and React UI components (LoginForm, TaskFilterToolbar, ProjectSwitcher, KanbanBoard).", bullet_style))
     story.append(Paragraph("• <b>Playwright E2E (14 Tests)</b>: Automated end-to-end browser tests in Headless Chromium. Verifies full user sign-in, task creation, dragging cards across columns, mobile viewport responsiveness, and multi-user login workflows.", bullet_style))
 
     story.append(Spacer(1, 10))
@@ -307,7 +309,7 @@ def create_markdown_file(md_path):
 | **AI Integration** | Rule Engine + Google Gemini API | Converts natural text prompts into structured JSON board mutation payloads. |
 | **Containerization** | Docker (`python:3.13-slim`) | Standardized Linux container packaging backend code and dependencies. |
 | **Cloud Hosting** | Render.com (Backend) & Vercel (Frontend) | Docker container API deployment on Render + Edge CDN distribution on Vercel. |
-| **Testing Suite** | Pytest (22), Vitest (44), Playwright (14) | 80 automated unit, component, integration, and E2E browser tests. |
+| **Testing Suite** | Pytest (39), Vitest (44), Playwright (14) | 97 automated unit, component, integration, data persistence, and E2E browser tests. |
 
 ---
 
@@ -320,7 +322,8 @@ Drag_N_Drop/
 ├── README.md                          # Project repository overview and live links
 ├── documentation/                     # Dedicated documentation folder
 │   ├── Kanban_Studio_Pro_Master_Documentation.pdf
-│   └── Kanban_Studio_Pro_Master_Documentation.md
+│   ├── Kanban_Studio_Pro_Master_Documentation.md
+│   └── generate_docs.py              # Automated master PDF & Markdown documentation generator
 └── pm/
     ├── backend/                       # Python FastAPI Backend Service
     │   ├── main.py                    # REST & WebSocket API endpoints
@@ -331,7 +334,7 @@ Drag_N_Drop/
     │   ├── pm.db                      # SQLite binary database file
     │   ├── requirements.txt           # Python dependencies (fastapi, uvicorn, pytest)
     │   ├── test_main.py               # Pytest suite for FastAPI REST endpoints
-    │   ├── test_database.py           # Pytest suite for SQLite database functions
+    │   ├── test_database.py           # Pytest suite for SQLite database functions & data persistence
     │   ├── test_ai.py                 # Pytest suite for AI assistant handler
     │   ├── test_schema.py             # Pytest suite for Pydantic schema validation
     │   └── test_security.py           # Pytest suite for RBAC & password security
@@ -358,7 +361,7 @@ Drag_N_Drop/
         │   │   ├── ProjectMembersModal.tsx # Project member management modal
         │   │   └── NotificationCenterModal.tsx # Notifications drawer modal
         │   └── lib/
-        │       ├── api.ts             # API client & getApiUrl helper
+        │       ├── api.ts             # API client & getApiUrl helper with Bearer token authentication
         │       ├── kanban.ts          # Board data structures & moveCard logic
         │       ├── filterUtils.ts     # Search, tag filter, and priority sorting utilities
         │       ├── useUndoRedo.ts     # Multi-level Undo (Ctrl+Z) & Redo (Ctrl+Y) hook
@@ -374,7 +377,12 @@ Drag_N_Drop/
 ### 🔑 Auth & Session Management
 - **Registration & Sign-In**: Users register with username and password. Usernames are automatically lower-cased and sanitized.
 - **Password Hashing**: Passwords are hashed with PBKDF2-HMAC-SHA256 (`100,000` iterations) and salted.
+- **Header Authentication**: Active sessions issue `secrets.token_hex(32)` tokens passed via `Authorization: Bearer` and `X-Session-Token` headers.
 - **Standalone Fallback**: If backend API is unreachable, local user accounts persist in `localStorage` (`pm_registered_users`).
+
+### 💾 Persistent Database State Engine
+- **Single Source of Truth**: Guaranteed SQLite database state loading on login and project switching, eliminating stale demo card overwrites.
+- **Decoupled Async Persistence**: Card operations (drag-and-drop, title edit, priority, due date) update React state cleanly and persist to backend SQLite tables.
 
 ### 📱 Responsive Mobile Layout & Touch Drag & Drop
 - **Vertical Mobile Stack**: On screens `< 1024px`, columns stack vertically (`flex flex-col gap-6 w-full`) to eliminate horizontal scrollbars.
@@ -390,10 +398,10 @@ Drag_N_Drop/
 
 ---
 
-## 5. Testing Architecture (96 Total Tests — 100% Pass Rate)
+## 5. Testing Architecture (97 Total Tests — 100% Pass Rate)
 
-1. **Pytest (38 Backend Tests)**: Verifies REST endpoints, database schema, PBKDF2 hashing, RBAC permissions, cryptographic session tokens, IDOR isolation, and Part 28 adversarial security scenarios.
-2. **Vitest (44 Frontend Tests)**: Tests React components, filter utilities, undo/redo state hooks, activity modals, notification center, project switcher, and auth form handlers.
+1. **Pytest (39 Backend Tests)**: Verifies REST endpoints, database schema, PBKDF2 hashing, RBAC permissions, cryptographic session tokens, persistent data loss verification (`test_card_persistence_across_logout_and_login`), IDOR isolation, and Part 28 adversarial security scenarios.
+2. **Vitest (44 Frontend Tests across 12 Suites)**: Tests React components, filter utilities, undo/redo state hooks, activity modals, notification center, project switcher, and auth form handlers.
 3. **Playwright (14 E2E Tests)**: Automates Chromium browser interactions covering sign-in, card dragging, filtering, mobile viewport rendering, and multi-user login workflows.
 
 ---
@@ -416,6 +424,7 @@ Vercel hosts the Next.js static bundle on an Edge CDN. The environment variable 
 - **Release Classification**: **`PRODUCTION READY`**
 - **Security Audit Status**: 0 Critical (P0) or High (P1) Vulnerabilities
 - **Part 28 Verification**: Passed independent adversarial security audit (`test_part28_adversarial_security.py`).
+- **Part 29 Verification**: Passed final production deployment, test suite execution (97 automated tests passing 100%), persistent data loss regression testing, master documentation sync, and repository GitHub release packaging.
 - **Part 29 Verification**: Passed final production deployment, test suite execution (96 automated tests passing 100%), master documentation sync, and repository GitHub release packaging.
 """
     with open(md_path, "w", encoding="utf-8") as f:
