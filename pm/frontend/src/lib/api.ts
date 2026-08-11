@@ -8,6 +8,11 @@ export type Project = {
 };
 
 export const getApiUrl = (path: string) => {
+  const envUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (envUrl) {
+    const baseUrl = envUrl.replace(/\/$/, "");
+    return `${baseUrl}${path}`;
+  }
   if (typeof window !== "undefined") {
     if (window.location.port !== "8000" && window.location.protocol.startsWith("http")) {
       return `http://127.0.0.1:8000${path}`;
