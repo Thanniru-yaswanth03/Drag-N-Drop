@@ -26,11 +26,11 @@ A modern, enterprise-grade Kanban project management application featuring dynam
 
 - 🖱️ **Drag and Drop Engine**: Smooth card reordering across workflow columns powered by `@dnd-kit`.
 - 📱 **Mobile Touch Optimization**: Vertical stacked column layout on mobile screens with touch-sensor activation delay (`150ms`).
-- 🔐 **Authentication & Case Normalization**: PBKDF2-HMAC-SHA256 password hashing, user registration, auto-login, and case-sanitized credentials.
+- 🔐 **Authentication & Cryptographic Sessions**: Cryptographically random session token generation (`secrets.token_hex(32)`), session revocation on logout, PBKDF2-HMAC-SHA256 password hashing, user registration, and identity validation.
 - 📁 **Multi-Project Workspace**: Create, switch, rename, and isolate independent Kanban project boards.
-- 🤖 **AI Kanban Assistant**: Conversational AI parsing natural language prompts to automatically execute structured board mutations.
+- 🤖 **AI Kanban Assistant & Model Failover**: Conversational AI parsing natural language prompts with model failover stack (`openai/gpt-4o-mini` -> `meta-llama/llama-3.3-70b-instruct` -> `openrouter/auto` -> Smart Local NLP).
 - ⚡ **Real-Time WebSockets**: Live multi-user synchronization across active project sessions (`/ws/projects/{id}`).
-- 🛡️ **Role-Based Access Control (RBAC)**: Backend role permission enforcement (`owner`, `member`, `viewer`).
+- 🛡️ **Role-Based Access Control (RBAC)**: Backend role permission enforcement (`owner`, `admin`, `member`, `viewer`, `none`) protecting projects and cards against unauthorized mutations.
 - 📜 **Activity Audit Trail & Notifications**: Automatic logging of all board modifications and team alerts.
 - 🔄 **Multi-Level Undo / Redo**: Built-in state history management with keyboard shortcuts (`Ctrl+Z` / `Ctrl+Y`).
 - 🎨 **Rich Glassmorphism UI**: Vibrant dark/light mode toggle with custom design system tokens and micro-animations.
@@ -48,9 +48,9 @@ A modern, enterprise-grade Kanban project management application featuring dynam
 ### Backend
 - **Framework**: FastAPI (Python 3.13), Uvicorn ASGI Server
 - **Database**: SQLite3 (WAL Mode), Python `sqlite3` driver
-- **Security**: PBKDF2-HMAC-SHA256 password hashing (`100,000` iterations)
-- **AI Integration**: Rule Parser + Google Gemini API
-- **Testing**: Pytest (22 tests)
+- **Security**: Cryptographic Session Tokens, PBKDF2-HMAC-SHA256 password hashing (`100,000` iterations)
+- **AI Integration**: OpenRouter API (GPT-4o-mini) with Failover Stack & Smart Local NLP
+- **Testing**: Pytest (31 tests, including Security Audit Regression suite)
 
 ### DevOps & Cloud Infrastructure
 - **Containerization**: Docker (`python:3.13-slim`)
