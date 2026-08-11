@@ -4,9 +4,10 @@
 A modern Kanban-style project management application with drag-and-drop
 functionality for organizing tasks across different workflow columns.
 
-## 🚀 Live Demo
+## 🚀 Live Demo & Cloud Backend
 
-[View Live Demo](https://drag-n-drop-lilac.vercel.app/)
+- **Frontend App**: [https://drag-n-drop-lilac.vercel.app/](https://drag-n-drop-lilac.vercel.app/)
+- **Live Cloud Backend**: [https://drag-n-drop-28p3.onrender.com](https://drag-n-drop-28p3.onrender.com)
 
 ## 📸 Screenshots
 
