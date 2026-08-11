@@ -584,10 +584,6 @@ def get_board(user_id: str = "user", db_path: Path = None, project_id: str = Non
     )
     col_rows = cursor.fetchall()
 
-    # If database has fewer than 5 columns (e.g. from an incomplete test put), restore 5 default columns
-    if len(col_rows) < 5:
-        conn.close()
-        return reset_default_board(user_id, db_path)
 
     columns = []
     cards_map = {}
@@ -671,10 +667,10 @@ def save_board(user_id: str, board_data: dict, db_path: Path = None, project_id:
 
     columns = board_data.get("columns", []) if isinstance(board_data, dict) else []
     
-    # Don't overwrite whole board if payload is empty or has fewer than 2 columns
-    if len(columns) < 2:
+    # Don't overwrite whole board if payload is empty
+    if len(columns) == 0:
         conn.close()
-        return get_board(user_id, db_path)
+        return get_board(user_id, db_path, project_id=project_id)
 
     # Delete existing columns and cards for clean state update
     cursor.execute("SELECT id FROM columns WHERE board_id = ?", (board_id,))
@@ -748,7 +744,7 @@ def save_board(user_id: str, board_data: dict, db_path: Path = None, project_id:
 
     conn.commit()
     conn.close()
-    return get_board(user_id, db_path)
+    return get_board(user_id, db_path, project_id=project_id)
 
 
 def add_card(

@@ -117,3 +117,62 @@ def test_enhanced_task_management_db():
     assert updated["assignee"] == "robin"
     assert updated["updatedAt"] is not None
 
+
+def test_board_with_few_columns_does_not_reset():
+    database.seed_default_board("testuser", TEST_DB_PATH)
+    # Create board payload with only 3 columns
+    board = {
+        "columns": [
+            {"id": "c1", "title": "Todo", "cardIds": ["card-custom-1"]},
+            {"id": "c2", "title": "Doing", "cardIds": []},
+            {"id": "c3", "title": "Done", "cardIds": []},
+        ],
+        "cards": {
+            "card-custom-1": {
+                "id": "card-custom-1",
+                "title": "My Custom Task",
+                "details": "Important task details",
+                "priority": "high",
+            }
+        },
+    }
+    saved = database.save_board("testuser", board, db_path=TEST_DB_PATH)
+    assert len(saved["columns"]) == 3
+    assert "card-custom-1" in saved["cards"]
+
+    # Fetching the board again must NOT trigger reset_default_board
+    fetched = database.get_board("testuser", db_path=TEST_DB_PATH)
+    assert len(fetched["columns"]) == 3
+    assert "card-custom-1" in fetched["cards"]
+    assert fetched["cards"]["card-custom-1"]["title"] == "My Custom Task"
+
+
+def test_save_board_preserves_project_id():
+    database.seed_default_board("testuser", TEST_DB_PATH)
+    proj = database.create_project("testuser", name="Mobile App Project", db_path=TEST_DB_PATH)
+    proj_id = proj["id"]
+
+    board_payload = {
+        "columns": [
+            {"id": "p-col-1", "title": "Backlog", "cardIds": ["p-card-1"]},
+            {"id": "p-col-2", "title": "Done", "cardIds": []},
+        ],
+        "cards": {
+            "p-card-1": {
+                "id": "p-card-1",
+                "title": "Project Task 1",
+                "details": "Task for mobile app",
+            }
+        },
+    }
+    saved = database.save_board("testuser", board_payload, db_path=TEST_DB_PATH, project_id=proj_id)
+    assert saved["boardId"] == proj_id
+    assert len(saved["columns"]) == 2
+    assert "p-card-1" in saved["cards"]
+
+    fetched = database.get_board("testuser", db_path=TEST_DB_PATH, project_id=proj_id)
+    assert fetched["boardId"] == proj_id
+    assert len(fetched["columns"]) == 2
+    assert "p-card-1" in fetched["cards"]
+
+
