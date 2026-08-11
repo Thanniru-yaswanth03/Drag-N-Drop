@@ -28,6 +28,7 @@ import { useUndoRedo } from "@/lib/useUndoRedo";
 import { useWebSocket } from "@/lib/useWebSocket";
 import { createId, initialData, moveCard, type Card, type BoardData } from "@/lib/kanban";
 import {
+  getApiUrl,
   fetchBoard,
   saveBoard,
   deleteCardApi,
@@ -295,7 +296,7 @@ export const KanbanBoard = () => {
 
   const handleLogin = async (username: string, password: string) => {
     try {
-      const response = await fetch("/api/auth/login", {
+      const response = await fetch(getApiUrl("/api/auth/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
@@ -311,6 +312,18 @@ export const KanbanBoard = () => {
       }
     } catch {
       // Fallback for standalone mode
+    }
+
+    if (typeof localStorage !== "undefined") {
+      const localUsers = JSON.parse(localStorage.getItem("pm_registered_users") || "{}");
+      if (localUsers[username] && localUsers[username] === password) {
+        setProjects([]);
+        setActiveProjectId(null);
+        setBoard(initialData);
+        localStorage.setItem("pm_auth_user", username);
+        setUser(username);
+        return true;
+      }
     }
 
     if (username === "user" && password === "password") {

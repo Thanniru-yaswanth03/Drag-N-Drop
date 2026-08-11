@@ -7,7 +7,7 @@ export type Project = {
   updatedAt?: string | null;
 };
 
-const getApiUrl = (path: string) => {
+export const getApiUrl = (path: string) => {
   if (typeof window !== "undefined") {
     if (window.location.port !== "8000" && window.location.protocol.startsWith("http")) {
       return `http://127.0.0.1:8000${path}`;
@@ -15,6 +15,35 @@ const getApiUrl = (path: string) => {
   }
   return path;
 };
+
+export async function registerApi(username: string, password: string) {
+  try {
+    const response = await fetch(getApiUrl("/api/auth/register"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.ok && data.success) {
+      if (typeof localStorage !== "undefined") {
+        const localUsers = JSON.parse(localStorage.getItem("pm_registered_users") || "{}");
+        localUsers[username] = password;
+        localStorage.setItem("pm_registered_users", JSON.stringify(localUsers));
+      }
+      return data;
+    }
+    return { success: false, error: data.detail || "Registration failed" };
+  } catch (error) {
+    console.error("Error registering user:", error);
+    if (typeof localStorage !== "undefined") {
+      const localUsers = JSON.parse(localStorage.getItem("pm_registered_users") || "{}");
+      localUsers[username] = password;
+      localStorage.setItem("pm_registered_users", JSON.stringify(localUsers));
+      return { success: true, user: username };
+    }
+    return { success: false, error: "Network error during registration" };
+  }
+}
 
 export async function fetchProjects(username: string = "user"): Promise<Project[]> {
   try {
@@ -237,23 +266,6 @@ export async function fetchProjectActivity(
   return [];
 }
 
-export async function registerApi(username: string, password: string) {
-  try {
-    const response = await fetch(getApiUrl("/api/auth/register"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (response.ok && data.success) {
-      return data;
-    }
-    return { success: false, error: data.detail || "Registration failed" };
-  } catch (error) {
-    console.error("Error registering user:", error);
-    return { success: false, error: "Network error during registration" };
-  }
-}
 
 export type ProjectMember = {
   id: string;
