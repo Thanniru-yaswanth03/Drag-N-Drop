@@ -2,6 +2,8 @@
 
 **Kanban Studio** is an AI-enhanced, real-time multi-project Kanban application engineered with **FastAPI**, **SQLite**, **React (Next.js)**, and **Tailwind CSS**. It provides flexible task drag-and-drop workflows, workspace multi-tenancy, granular Role-Based Access Control (RBAC), WebSockets real-time sync, due-date notifications, and AI-driven project intelligence.
 
+> 🏆 **Release Certification Status**: **`PRODUCTION READY`** (See [`docs/FINAL_RELEASE_CERTIFICATION.md`](./docs/FINAL_RELEASE_CERTIFICATION.md))
+
 ---
 
 ## 🌟 Key Features
