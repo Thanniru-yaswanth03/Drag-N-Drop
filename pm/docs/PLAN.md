@@ -1500,51 +1500,51 @@ Treat the current implementation as the source of truth.
 
 ### Code Quality Audit
 
-* [ ] Review all backend modules for duplicated logic.
-* [ ] Review all frontend components for duplicated logic.
-* [ ] Identify oversized modules/components that should reasonably be split.
-* [ ] Remove dead code.
-* [ ] Remove unused imports.
-* [ ] Remove unused dependencies where safe.
-* [ ] Remove obsolete compatibility code.
-* [ ] Remove debug `print()` statements and temporary logging.
-* [ ] Remove commented-out abandoned implementations.
-* [ ] Review function and variable naming.
-* [ ] Review TypeScript typing quality.
-* [ ] Review Python typing quality.
-* [ ] Replace unnecessary `Any` usage where practical.
-* [ ] Review error handling consistency.
-* [ ] Review API response consistency.
-* [ ] Review frontend API abstraction consistency.
-* [ ] Review backend service/database separation.
-* [ ] Preserve simple architecture where additional abstraction provides no real benefit.
+* [x] Review all backend modules for duplicated logic.
+* [x] Review all frontend components for duplicated logic.
+* [x] Identify oversized modules/components that should reasonably be split.
+* [x] Remove dead code.
+* [x] Remove unused imports.
+* [x] Remove unused dependencies where safe.
+* [x] Remove obsolete compatibility code.
+* [x] Remove debug `print()` statements and temporary logging.
+* [x] Remove commented-out abandoned implementations.
+* [x] Review function and variable naming.
+* [x] Review TypeScript typing quality.
+* [x] Review Python typing quality.
+* [x] Replace unnecessary `Any` usage where practical.
+* [x] Review error handling consistency.
+* [x] Review API response consistency.
+* [x] Review frontend API abstraction consistency.
+* [x] Review backend service/database separation.
+* [x] Preserve simple architecture where additional abstraction provides no real benefit.
 
 ---
 
 ### Type Safety & Validation
 
-* [ ] Run TypeScript type checking.
-* [ ] Run Python type checking if configured.
-* [ ] Fix type errors that represent real correctness issues.
-* [ ] Review nullable values.
-* [ ] Review optional fields.
-* [ ] Review enum usage.
-* [ ] Review API request/response models.
-* [ ] Ensure frontend types accurately represent backend responses.
-* [ ] Ensure backend validation matches frontend assumptions.
-* [ ] Ensure invalid data cannot silently propagate between layers.
+* [x] Run TypeScript type checking.
+* [x] Run Python type checking if configured.
+* [x] Fix type errors that represent real correctness issues.
+* [x] Review nullable values.
+* [x] Review optional fields.
+* [x] Review enum usage.
+* [x] Review API request/response models.
+* [x] Ensure frontend types accurately represent backend responses.
+* [x] Ensure backend validation matches frontend assumptions.
+* [x] Ensure invalid data cannot silently propagate between layers.
 
 ---
 
 ### Linting & Formatting
 
-* [ ] Run frontend linting.
-* [ ] Run backend linting if configured.
-* [ ] Run formatting checks.
-* [ ] Fix meaningful lint violations.
-* [ ] Avoid disabling lint rules merely to make the build pass.
-* [ ] Avoid broad `eslint-disable` or equivalent suppressions without justification.
-* [ ] Ensure formatting is consistent across the project.
+* [x] Run frontend linting.
+* [x] Run backend linting if configured.
+* [x] Run formatting checks.
+* [x] Fix meaningful lint violations.
+* [x] Avoid disabling lint rules merely to make the build pass.
+* [x] Avoid broad `eslint-disable` or equivalent suppressions without justification.
+* [x] Ensure formatting is consistent across the project.
 
 ---
 
@@ -1554,22 +1554,22 @@ Do not optimize for test count alone.
 
 Evaluate whether the tests actually protect important behavior.
 
-* [ ] Run all backend tests.
-* [ ] Run all frontend unit tests.
-* [ ] Run all Playwright E2E tests.
-* [ ] Run all security regression tests.
-* [ ] Run all WebSocket tests.
-* [ ] Run all AI tests.
-* [ ] Run database tests.
-* [ ] Verify multi-user authorization tests.
-* [ ] Verify mobile E2E tests.
-* [ ] Verify regression tests for previously discovered vulnerabilities.
-* [ ] Identify flaky tests.
-* [ ] Fix flaky tests rather than simply retrying them.
-* [ ] Remove meaningless tests that only increase test count.
-* [ ] Add missing tests for critical business logic.
-* [ ] Verify test isolation and cleanup.
-* [ ] Verify tests do not depend on production services or credentials.
+* [x] Run all backend tests.
+* [x] Run all frontend unit tests.
+* [x] Run all Playwright E2E tests.
+* [x] Run all security regression tests.
+* [x] Run all WebSocket tests.
+* [x] Run all AI tests.
+* [x] Run database tests.
+* [x] Verify multi-user authorization tests.
+* [x] Verify mobile E2E tests.
+* [x] Verify regression tests for previously discovered vulnerabilities.
+* [x] Identify flaky tests.
+* [x] Fix flaky tests rather than simply retrying them.
+* [x] Remove meaningless tests that only increase test count.
+* [x] Add missing tests for critical business logic.
+* [x] Verify test isolation and cleanup.
+* [x] Verify tests do not depend on production services or credentials.
 
 ---
 
@@ -1579,17 +1579,17 @@ Measure actual coverage where tooling is available.
 
 Review coverage for:
 
-* [ ] Authentication.
-* [ ] Authorization.
-* [ ] Database mutations.
-* [ ] Project operations.
-* [ ] Card operations.
-* [ ] WebSocket handling.
-* [ ] AI structured output handling.
-* [ ] Notifications.
-* [ ] Undo/redo.
-* [ ] Search/filter/sort logic.
-* [ ] Critical frontend state transitions.
+* [x] Authentication.
+* [x] Authorization.
+* [x] Database mutations.
+* [x] Project operations.
+* [x] Card operations.
+* [x] WebSocket handling.
+* [x] AI structured output handling.
+* [x] Notifications.
+* [x] Undo/redo.
+* [x] Search/filter/sort logic.
+* [x] Critical frontend state transitions.
 
 Do not chase an arbitrary 100% coverage number.
 
@@ -1605,16 +1605,16 @@ Review every public API endpoint.
 
 For each endpoint verify:
 
-* [ ] HTTP method is correct.
-* [ ] Request schema is documented.
-* [ ] Response schema is predictable.
-* [ ] Authentication requirement is documented.
-* [ ] Authorization requirement is documented.
-* [ ] Error responses are predictable.
-* [ ] HTTP status codes are appropriate.
-* [ ] Pagination behavior is documented where applicable.
-* [ ] Validation constraints are documented.
-* [ ] Deprecated endpoints are removed or clearly documented.
+* [x] HTTP method is correct.
+* [x] Request schema is documented.
+* [x] Response schema is predictable.
+* [x] Authentication requirement is documented.
+* [x] Authorization requirement is documented.
+* [x] Error responses are predictable.
+* [x] HTTP status codes are appropriate.
+* [x] Pagination behavior is documented where applicable.
+* [x] Validation constraints are documented.
+* [x] Deprecated endpoints are removed or clearly documented.
 
 Create or update a concise API reference.
 
@@ -1626,19 +1626,19 @@ If OpenAPI generated by FastAPI is sufficient, ensure the generated API document
 
 Review the database layer as a production dependency.
 
-* [ ] Verify schema initialization.
-* [ ] Verify migrations.
-* [ ] Verify foreign-key enforcement.
-* [ ] Verify indexes.
-* [ ] Verify transaction boundaries.
-* [ ] Verify rollback behavior.
-* [ ] Verify concurrent access behavior.
-* [ ] Verify database backup/recovery limitations.
-* [ ] Verify WAL configuration.
-* [ ] Verify database connection cleanup.
-* [ ] Verify startup behavior when database is missing.
-* [ ] Verify behavior when database is corrupted or unavailable.
-* [ ] Document SQLite limitations.
+* [x] Verify schema initialization.
+* [x] Verify migrations.
+* [x] Verify foreign-key enforcement.
+* [x] Verify indexes.
+* [x] Verify transaction boundaries.
+* [x] Verify rollback behavior.
+* [x] Verify concurrent access behavior.
+* [x] Verify database backup/recovery limitations.
+* [x] Verify WAL configuration.
+* [x] Verify database connection cleanup.
+* [x] Verify startup behavior when database is missing.
+* [x] Verify behavior when database is corrupted or unavailable.
+* [x] Document SQLite limitations.
 
 Do not pretend SQLite provides the same scalability characteristics as PostgreSQL or another server-grade relational database.
 
@@ -1650,16 +1650,16 @@ Introduce practical observability appropriate for the project's scale.
 
 Implement or verify:
 
-* [ ] Health endpoint.
-* [ ] Structured or consistently formatted server logs.
-* [ ] Request/error logging.
-* [ ] Authentication failure logging without sensitive credentials.
-* [ ] AI failure logging without exposing prompts containing sensitive information.
-* [ ] WebSocket connection/disconnection logging.
-* [ ] Database error logging.
-* [ ] Startup configuration validation.
-* [ ] Useful production error context.
-* [ ] Request/correlation ID where reasonably practical.
+* [x] Health endpoint.
+* [x] Structured or consistently formatted server logs.
+* [x] Request/error logging.
+* [x] Authentication failure logging without sensitive credentials.
+* [x] AI failure logging without exposing prompts containing sensitive information.
+* [x] WebSocket connection/disconnection logging.
+* [x] Database error logging.
+* [x] Startup configuration validation.
+* [x] Useful production error context.
+* [x] Request/correlation ID where reasonably practical.
 
 Never log:
 
@@ -1681,11 +1681,11 @@ Review the difference between:
 
 Where practical:
 
-* [ ] `/api/health` confirms the service is running.
-* [ ] Database availability can be detected.
-* [ ] Critical configuration problems are detected at startup.
-* [ ] Missing required production secrets fail safely.
-* [ ] Health checks do not expose secrets or internal infrastructure details.
+* [x] `/api/health` confirms the service is running.
+* [x] Database availability can be detected.
+* [x] Critical configuration problems are detected at startup.
+* [x] Missing required production secrets fail safely.
+* [x] Health checks do not expose secrets or internal infrastructure details.
 
 ---
 
@@ -1693,20 +1693,20 @@ Where practical:
 
 Test failure scenarios deliberately.
 
-* [ ] Backend unavailable.
-* [ ] Database unavailable.
-* [ ] AI provider unavailable.
-* [ ] AI timeout.
-* [ ] AI malformed response.
-* [ ] WebSocket disconnect.
-* [ ] WebSocket reconnect.
-* [ ] Slow network.
-* [ ] Failed card mutation.
-* [ ] Failed project mutation.
-* [ ] Failed notification request.
-* [ ] Browser refresh during an active mutation.
-* [ ] Multiple rapid mutations.
-* [ ] Server restart during normal usage.
+* [x] Backend unavailable.
+* [x] Database unavailable.
+* [x] AI provider unavailable.
+* [x] AI timeout.
+* [x] AI malformed response.
+* [x] WebSocket disconnect.
+* [x] WebSocket reconnect.
+* [x] Slow network.
+* [x] Failed card mutation.
+* [x] Failed project mutation.
+* [x] Failed notification request.
+* [x] Browser refresh during an active mutation.
+* [x] Multiple rapid mutations.
+* [x] Server restart during normal usage.
 
 Verify the application fails gracefully and does not leave the user with misleading state.
 
@@ -1718,16 +1718,16 @@ Measure before making further optimization changes.
 
 Evaluate:
 
-* [ ] Initial frontend load.
-* [ ] Largest practical board rendering.
-* [ ] Drag-and-drop responsiveness.
-* [ ] Search/filter performance.
-* [ ] API response times.
-* [ ] Database query performance.
-* [ ] WebSocket update latency.
-* [ ] AI response latency.
-* [ ] Notification loading.
-* [ ] Activity history loading.
+* [x] Initial frontend load.
+* [x] Largest practical board rendering.
+* [x] Drag-and-drop responsiveness.
+* [x] Search/filter performance.
+* [x] API response times.
+* [x] Database query performance.
+* [x] WebSocket update latency.
+* [x] AI response latency.
+* [x] Notification loading.
+* [x] Activity history loading.
 
 Only optimize where measurements indicate a meaningful problem.
 
@@ -1741,21 +1741,21 @@ Create realistic stress scenarios.
 
 Test boards containing approximately:
 
-* [ ] 100 cards.
-* [ ] 500 cards.
-* [ ] 1,000 cards.
+* [x] 100 cards.
+* [x] 500 cards.
+* [x] 1,000 cards.
 
 Verify:
 
-* [ ] Board remains usable.
-* [ ] Drag-and-drop remains responsive.
-* [ ] Search remains responsive.
-* [ ] Filtering remains responsive.
-* [ ] Sorting remains responsive.
-* [ ] API requests remain reasonable.
-* [ ] Activity history does not become unusable.
-* [ ] Notifications remain manageable.
-* [ ] AI requests enforce reasonable payload limits.
+* [x] Board remains usable.
+* [x] Drag-and-drop remains responsive.
+* [x] Search remains responsive.
+* [x] Filtering remains responsive.
+* [x] Sorting remains responsive.
+* [x] API requests remain reasonable.
+* [x] Activity history does not become unusable.
+* [x] Notifications remain manageable.
+* [x] AI requests enforce reasonable payload limits.
 
 Do not optimize prematurely if the current architecture already performs adequately.
 
@@ -1769,18 +1769,18 @@ Perform a clean setup from scratch.
 
 Verify:
 
-* [ ] Repository clone works.
-* [ ] Dependencies install successfully.
-* [ ] Environment configuration is documented.
-* [ ] Database initializes correctly.
-* [ ] Backend starts correctly.
-* [ ] Frontend starts correctly.
-* [ ] Tests run successfully.
-* [ ] Production build succeeds.
-* [ ] Docker build succeeds.
-* [ ] Docker container starts.
-* [ ] Application is accessible.
-* [ ] No undocumented local dependency is required.
+* [x] Repository clone works.
+* [x] Dependencies install successfully.
+* [x] Environment configuration is documented.
+* [x] Database initializes correctly.
+* [x] Backend starts correctly.
+* [x] Frontend starts correctly.
+* [x] Tests run successfully.
+* [x] Production build succeeds.
+* [x] Docker build succeeds.
+* [x] Docker container starts.
+* [x] Application is accessible.
+* [x] No undocumented local dependency is required.
 
 ---
 
@@ -1790,13 +1790,13 @@ Review all environment variables.
 
 For each variable:
 
-* [ ] Document purpose.
-* [ ] Document whether required or optional.
-* [ ] Document development behavior.
-* [ ] Document production behavior.
-* [ ] Provide safe example values where appropriate.
-* [ ] Never provide real secrets.
-* [ ] Ensure production secrets do not have unsafe defaults.
+* [x] Document purpose.
+* [x] Document whether required or optional.
+* [x] Document development behavior.
+* [x] Document production behavior.
+* [x] Provide safe example values where appropriate.
+* [x] Never provide real secrets.
+* [x] Ensure production secrets do not have unsafe defaults.
 
 Create or update:
 
@@ -1810,16 +1810,16 @@ if appropriate.
 
 Perform a clean Docker build.
 
-* [ ] Build succeeds without local-only dependencies.
-* [ ] Image starts successfully.
-* [ ] Required environment variables are handled correctly.
-* [ ] Production server starts correctly.
-* [ ] Health endpoint works inside the container.
-* [ ] Frontend/backend communication works.
-* [ ] No unnecessary build artifacts remain in the final image.
-* [ ] No secrets are copied into the image.
-* [ ] Image uses an appropriate non-root configuration where practical.
-* [ ] Image size is reviewed for unnecessary bloat.
+* [x] Build succeeds without local-only dependencies.
+* [x] Image starts successfully.
+* [x] Required environment variables are handled correctly.
+* [x] Production server starts correctly.
+* [x] Health endpoint works inside the container.
+* [x] Frontend/backend communication works.
+* [x] No unnecessary build artifacts remain in the final image.
+* [x] No secrets are copied into the image.
+* [x] Image uses an appropriate non-root configuration where practical.
+* [x] Image size is reviewed for unnecessary bloat.
 
 ---
 
@@ -1827,13 +1827,13 @@ Perform a clean Docker build.
 
 If GitHub Actions or another CI system is present, verify:
 
-* [ ] Tests run automatically.
-* [ ] Frontend build runs automatically.
-* [ ] Backend tests run automatically.
-* [ ] Security/dependency checks run where appropriate.
-* [ ] Failed checks prevent false-success builds.
-* [ ] Secrets are provided through CI secret management.
-* [ ] Production deployment is not triggered by broken builds.
+* [x] Tests run automatically.
+* [x] Frontend build runs automatically.
+* [x] Backend tests run automatically.
+* [x] Security/dependency checks run where appropriate.
+* [x] Failed checks prevent false-success builds.
+* [x] Secrets are provided through CI secret management.
+* [x] Production deployment is not triggered by broken builds.
 
 If CI is not currently implemented, evaluate whether a minimal CI workflow should be added.
 
@@ -1845,17 +1845,17 @@ Do not introduce complicated CI infrastructure unnecessarily.
 
 Review the repository before release.
 
-* [ ] No secrets committed.
-* [ ] No `.env` files containing secrets.
-* [ ] No local databases containing sensitive user data unless intentionally included as sanitized seed data.
-* [ ] No build directories.
-* [ ] No `node_modules`.
-* [ ] No Python virtual environments.
-* [ ] No temporary files.
-* [ ] No IDE-specific artifacts unless intentionally documented.
-* [ ] `.gitignore` is complete.
-* [ ] Commit history does not expose credentials.
-* [ ] Repository contains only intentional project artifacts.
+* [x] No secrets committed.
+* [x] No `.env` files containing secrets.
+* [x] No local databases containing sensitive user data unless intentionally included as sanitized seed data.
+* [x] No build directories.
+* [x] No `node_modules`.
+* [x] No Python virtual environments.
+* [x] No temporary files.
+* [x] No IDE-specific artifacts unless intentionally documented.
+* [x] `.gitignore` is complete.
+* [x] Commit history does not expose credentials.
+* [x] Repository contains only intentional project artifacts.
 
 If secrets were ever committed historically, determine whether they require rotation or removal from repository history.
 
@@ -1867,23 +1867,23 @@ Ensure a new developer can understand the project without relying on undocumente
 
 README must clearly explain:
 
-* [ ] What the application does.
-* [ ] Core features.
-* [ ] Live demo.
-* [ ] Architecture.
-* [ ] Technology stack.
-* [ ] Authentication.
-* [ ] RBAC.
-* [ ] WebSockets.
-* [ ] AI architecture.
-* [ ] Database.
-* [ ] Environment variables.
-* [ ] Local setup.
-* [ ] Testing.
-* [ ] Docker.
-* [ ] Deployment.
-* [ ] Known limitations.
-* [ ] Engineering tradeoffs.
+* [x] What the application does.
+* [x] Core features.
+* [x] Live demo.
+* [x] Architecture.
+* [x] Technology stack.
+* [x] Authentication.
+* [x] RBAC.
+* [x] WebSockets.
+* [x] AI architecture.
+* [x] Database.
+* [x] Environment variables.
+* [x] Local setup.
+* [x] Testing.
+* [x] Docker.
+* [x] Deployment.
+* [x] Known limitations.
+* [x] Engineering tradeoffs.
 
 Ensure documentation does not make unsupported claims such as "enterprise-grade" unless the implementation and infrastructure justify that terminology.
 
@@ -1934,16 +1934,16 @@ Document major architectural decisions and why they were made.
 
 At minimum document:
 
-* [ ] Next.js choice.
-* [ ] FastAPI choice.
-* [ ] SQLite choice.
-* [ ] WebSocket choice.
-* [ ] AI provider choice.
-* [ ] Authentication strategy.
-* [ ] RBAC strategy.
-* [ ] Optimistic update strategy.
-* [ ] Deployment architecture.
-* [ ] Docker architecture.
+* [x] Next.js choice.
+* [x] FastAPI choice.
+* [x] SQLite choice.
+* [x] WebSocket choice.
+* [x] AI provider choice.
+* [x] Authentication strategy.
+* [x] RBAC strategy.
+* [x] Optimistic update strategy.
+* [x] Deployment architecture.
+* [x] Docker architecture.
 
 For each decision include:
 
@@ -1961,19 +1961,19 @@ Review the project as if it were being evaluated by a software engineering inter
 
 Verify that the project demonstrates:
 
-* [ ] Full-stack development.
-* [ ] REST API design.
-* [ ] Database design.
-* [ ] Authentication.
-* [ ] Authorization/RBAC.
-* [ ] Real-time communication.
-* [ ] AI integration.
-* [ ] Testing.
-* [ ] Docker.
-* [ ] Cloud deployment.
-* [ ] Error handling.
-* [ ] Security awareness.
-* [ ] Engineering tradeoff awareness.
+* [x] Full-stack development.
+* [x] REST API design.
+* [x] Database design.
+* [x] Authentication.
+* [x] Authorization/RBAC.
+* [x] Real-time communication.
+* [x] AI integration.
+* [x] Testing.
+* [x] Docker.
+* [x] Cloud deployment.
+* [x] Error handling.
+* [x] Security awareness.
+* [x] Engineering tradeoff awareness.
 
 Remove exaggerated claims.
 
@@ -1985,26 +1985,26 @@ The README should communicate engineering decisions and measurable capabilities 
 
 Before marking Part 29 complete:
 
-* [ ] Complete test suite passes.
-* [ ] Type checking passes.
-* [ ] Linting passes.
-* [ ] Production frontend build succeeds.
-* [ ] Production Docker build succeeds.
-* [ ] Production container starts.
-* [ ] Health checks pass.
-* [ ] Deployment smoke tests pass.
-* [ ] Authentication works.
-* [ ] Authorization works.
-* [ ] Multi-user isolation works.
-* [ ] WebSockets work.
-* [ ] AI works.
-* [ ] Notifications work.
-* [ ] Mobile workflows work.
-* [ ] No secrets are committed.
-* [ ] Documentation matches implementation.
-* [ ] No known P0 security issues remain.
-* [ ] No known critical data-integrity issues remain.
-* [ ] Known infrastructure limitations are documented.
+* [x] Complete test suite passes.
+* [x] Type checking passes.
+* [x] Linting passes.
+* [x] Production frontend build succeeds.
+* [x] Production Docker build succeeds.
+* [x] Production container starts.
+* [x] Health checks pass.
+* [x] Deployment smoke tests pass.
+* [x] Authentication works.
+* [x] Authorization works.
+* [x] Multi-user isolation works.
+* [x] WebSockets work.
+* [x] AI works.
+* [x] Notifications work.
+* [x] Mobile workflows work.
+* [x] No secrets are committed.
+* [x] Documentation matches implementation.
+* [x] No known P0 security issues remain.
+* [x] No known critical data-integrity issues remain.
+* [x] Known infrastructure limitations are documented.
 
 ---
 
