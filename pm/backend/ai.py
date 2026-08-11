@@ -56,25 +56,25 @@ async def test_ai_connection():
 
 
 SYSTEM_PROMPT = """You are an intelligent AI Project Management Assistant for Kanban Studio.
-You assist users by answering questions and helping them manage their Kanban board.
+You assist users by answering questions, summarizing project status, analyzing workloads, and helping them manage their Kanban board.
 
 You will receive the user's message and the current JSON state of their Kanban board.
 
 Respond ONLY with a valid JSON object matching this schema:
 {
-  "reply": "Your friendly and helpful text message response to the user.",
+  "reply": "Your friendly, helpful, markdown-formatted text response to the user.",
   "board_update": null OR {
     "columns": [ ... updated list of columns with cardIds ... ],
     "cards": { ... updated card dictionary mapping cardId to {id, title, details, description, priority, dueDate, tags, assignee} ... }
   }
 }
 
-Rules for board updates:
-1. Creating cards: If the user asks to add/create a card (e.g. 'Add QA Testing to In Progress'), add a new card entry to 'cards' and append its ID to the target column's 'cardIds'.
-2. Moving cards: If the user asks to move a card (e.g. 'Move card-1 to Done' or 'shift roadmap to Review'), remove its ID from the source column 'cardIds' and append it to the target column 'cardIds'.
-3. Deleting/Clearing cards: If the user asks to clear or delete a card or clear a column (e.g. 'clear card from progress' or 'delete card-2'), remove the card ID from 'cardIds' and delete it from 'cards'.
-4. Column Renaming: If the user asks to rename a column (e.g. 'Rename Backlog to Upcoming'), update the title of that column in 'columns'.
-5. General questions: If no board mutation is requested, set 'board_update' to null.
+Rules for answering questions & board updates:
+1. Question Answering: If the user asks about backlog tasks, current progress, overdue items, or specific card details (e.g. 'What are my backlogs for today?', 'Show tasks in progress'), inspect the board JSON and summarize the specific matching cards with titles, priorities, due dates, and assignees in clear markdown formatting in the 'reply' field. Set 'board_update' to null.
+2. Creating cards: If the user asks to add/create a card (e.g. 'Add QA Testing to In Progress'), add a new card entry to 'cards' and append its ID to the target column's 'cardIds'.
+3. Moving cards: If the user asks to move a card (e.g. 'Move card-1 to Done' or 'shift roadmap to Review'), remove its ID from the source column 'cardIds' and append it to the target column 'cardIds'.
+4. Deleting/Clearing cards: If the user asks to clear or delete a card or clear a column (e.g. 'clear card from progress' or 'delete card-2'), remove the card ID from 'cardIds' and delete it from 'cards'.
+5. Column Renaming: If the user asks to rename a column (e.g. 'Rename Backlog to Upcoming'), update the title of that column in 'columns'.
 6. Return ONLY raw valid JSON string without markdown wrappers."""
 
 
@@ -91,9 +91,9 @@ def smart_local_nlp(user_message: str, board_data: dict) -> dict:
             if title_lower in text or col_id in text:
                 return col
             # Common column aliases
-            if "progress" in text and "progress" in title_lower:
-                return col
             if "backlog" in text and "backlog" in title_lower:
+                return col
+            if "progress" in text and "progress" in title_lower:
                 return col
             if ("done" in text or "complete" in text or "finished" in text) and "done" in title_lower:
                 return col
@@ -119,7 +119,9 @@ def smart_local_nlp(user_message: str, board_data: dict) -> dict:
                 return cid, cobj
 
         # 3. Token overlap match
-        text_words = set(re.findall(r"\w+", text)) - {"card", "card1", "card2", "card3", "to", "in", "from", "the", "a", "an", "on", "for", "move", "delete", "clear", "remove"}
+        text_words = set(re.findall(r"\w+", text)) - {
+            "card", "card1", "card2", "card3", "to", "in", "from", "the", "a", "an", "on", "for", "move", "delete", "clear", "remove"
+        }
         best_cid = None
         best_overlap = 0
 
@@ -136,9 +138,28 @@ def smart_local_nlp(user_message: str, board_data: dict) -> dict:
 
         return None, None
 
+    # Helper: Format cards list nicely
+    def format_card_list(col_title: str, card_ids: list):
+        col_cards = [cards[cid] for cid in card_ids if cid in cards]
+        if not col_cards:
+            return f"The **{col_title}** column is currently empty! 🎈"
+
+        lines = [f"📋 **{col_title} ({len(col_cards)} task{'s' if len(col_cards) > 1 else ''}):**\n"]
+        for idx, c in enumerate(col_cards, 1):
+            prio = c.get("priority", "medium").upper()
+            prio_badge = "🔴 High" if prio == "HIGH" else "🟡 Medium" if prio == "MEDIUM" else "🟢 Low"
+            due = f" | Due: {c['dueDate']}" if c.get("dueDate") else ""
+            assignee = f" | Assigned: @{c['assignee']}" if c.get("assignee") else ""
+            desc = c.get("description") or c.get("details") or ""
+            desc_str = f"\n   *\"{desc[:80]}...\"*" if len(desc) > 80 else (f"\n   *\"{desc}\"*" if desc else "")
+            
+            lines.append(f"{idx}. **{c.get('title', 'Untitled Task')}** ({prio_badge}{due}{assignee}){desc_str}")
+
+        lines.append(f"\n💡 *Tip: Ask me to move any card to 'In Progress' or 'Done', or edit card details!*")
+        return "\n".join(lines)
+
     # Intent 1: CLEAR / DELETE / REMOVE / CLEAN
     if any(k in lower for k in ["clear", "delete", "remove", "drop", "clean", "erase"]):
-        # Check if clearing all cards in a column
         if "all" in lower or "everything" in lower:
             target_col = match_column(lower)
             if target_col:
@@ -155,7 +176,6 @@ def smart_local_nlp(user_message: str, board_data: dict) -> dict:
                     "board_update": {"columns": updated_cols, "cards": new_cards},
                 }
 
-        # Check for specific card match
         card_id, card_obj = match_card(lower)
         if card_id and card_obj:
             new_cards = {cid: cobj for cid, cobj in cards.items() if cid != card_id}
@@ -168,7 +188,6 @@ def smart_local_nlp(user_message: str, board_data: dict) -> dict:
                 "board_update": {"columns": updated_cols, "cards": new_cards},
             }
 
-        # Match column to remove top card
         target_col = match_column(lower)
         if target_col:
             card_ids = list(target_col.get("cardIds", []))
@@ -215,7 +234,6 @@ def smart_local_nlp(user_message: str, board_data: dict) -> dict:
         card_id, card_obj = match_card(lower)
 
         if not card_id:
-            # Find any available card in a different column
             for col in columns:
                 if target_col and col["id"] != target_col["id"] and col.get("cardIds"):
                     card_id = col["cardIds"][0]
@@ -238,7 +256,7 @@ def smart_local_nlp(user_message: str, board_data: dict) -> dict:
             }
 
     # Intent 4: ADD / CREATE / NEW
-    if any(k in lower for k in ["add", "create", "new", "insert"]):
+    if any(k in lower for k in ["add", "create", "new task", "insert", "add card", "create card"]):
         target_col = match_column(lower) or columns[0]
         raw = re.sub(r"(add|create|new|insert|a card|task|for|to|in progress|backlog|done|review|discovery)", "", lower, flags=re.IGNORECASE).strip()
         title = raw.title() if len(raw) > 1 else "New AI Task"
@@ -267,8 +285,63 @@ def smart_local_nlp(user_message: str, board_data: dict) -> dict:
             "board_update": {"columns": updated_cols, "cards": cards},
         }
 
-    # Intent 5: PROJECT SUMMARY / INTELLIGENCE
-    if any(k in lower for k in ["summary", "summarize", "overview", "health", "progress"]):
+    # Intent 5: SPECIFIC COLUMN / BACKLOG QUERIES (e.g. "what are my backlogs for today", "show backlog", "cards in progress")
+    if any(k in lower for k in ["backlog", "backlogs", "in progress", "done", "review", "discovery", "todo", "to do"]):
+        target_col = match_column(lower)
+        if not target_col and ("backlog" in lower or "backlogs" in lower):
+            target_col = next((c for c in columns if "backlog" in c["title"].lower()), columns[0] if columns else None)
+        
+        if target_col:
+            reply_msg = format_card_list(target_col["title"], target_col.get("cardIds", []))
+            return {"reply": reply_msg, "board_update": None}
+
+    # Intent 6: GENERAL TASK LISTING / "MY TASKS" / "WHAT ARE MY TASKS"
+    if any(k in lower for k in ["my task", "my tasks", "what are my", "what do i have", "tasks for today", "show tasks", "list tasks"]):
+        active_cards = []
+        for col in columns:
+            if "done" not in col["title"].lower() and "complete" not in col["title"].lower():
+                for cid in col.get("cardIds", []):
+                    if cid in cards:
+                        active_cards.append((col["title"], cards[cid]))
+
+        if not active_cards:
+            return {
+                "reply": "🎉 You have no active pending tasks! All items are either in Done or your board is clear.",
+                "board_update": None,
+            }
+
+        lines = [f"📌 **Your Active Tasks ({len(active_cards)}):**\n"]
+        for idx, (col_title, c) in enumerate(active_cards[:10], 1):
+            prio = c.get("priority", "medium").upper()
+            prio_badge = "🔴 High" if prio == "HIGH" else "🟡 Medium" if prio == "MEDIUM" else "🟢 Low"
+            lines.append(f"{idx}. **{c.get('title')}** in *[{col_title}]* ({prio_badge})")
+        
+        lines.append("\n💡 *Ask me to show details for any card or move items between columns!*")
+        return {"reply": "\n".join(lines), "board_update": None}
+
+    # Intent 7: CARD SEARCH / LOOKUP
+    if any(k in lower for k in ["find", "search", "details", "lookup", "info for", "tell me about"]):
+        card_id, card_obj = match_card(lower)
+        if card_obj:
+            prio = card_obj.get("priority", "medium").upper()
+            col_name = "Unknown"
+            for col in columns:
+                if card_id in col.get("cardIds", []):
+                    col_name = col["title"]
+                    break
+            
+            card_info = (
+                f"🔎 **Card Details: {card_obj.get('title')}**\n\n"
+                f"• **Column**: {col_name}\n"
+                f"• **Priority**: {prio}\n"
+                f"• **Assignee**: @{card_obj.get('assignee') or 'Unassigned'}\n"
+                f"• **Due Date**: {card_obj.get('dueDate') or 'None'}\n"
+                f"• **Description**: {card_obj.get('description') or card_obj.get('details') or 'No description provided.'}"
+            )
+            return {"reply": card_info, "board_update": None}
+
+    # Intent 8: PROJECT SUMMARY / INTELLIGENCE
+    if any(k in lower for k in ["summary", "summarize", "overview", "health", "progress", "report"]):
         total_tasks = len(cards)
         done_col = next((c for c in columns if "done" in c["title"].lower() or "complete" in c["title"].lower()), None)
         done_count = len(done_col["cardIds"]) if done_col else 0
@@ -282,11 +355,11 @@ def smart_local_nlp(user_message: str, board_data: dict) -> dict:
             f"• **Completed**: {done_count} ({pct}% completion)\n"
             f"• **High Priority**: {high_prio} tasks\n\n"
             f"**Column Breakdown:**\n" + "\n".join(counts) + "\n\n"
-            f"💡 *Recommendation:* Focus on clearing high-priority tasks in In Progress to maintain momentum."
+            f"💡 *Recommendation:* Focus on clearing high-priority tasks in Backlog or In Progress to maintain momentum."
         )
         return {"reply": summary_text, "board_update": None}
 
-    # Intent 6: WORKLOAD ANALYSIS
+    # Intent 9: WORKLOAD ANALYSIS
     if any(k in lower for k in ["workload", "assignee", "capacity", "team"]):
         assignee_map = {}
         unassigned = 0
@@ -297,7 +370,7 @@ def smart_local_nlp(user_message: str, board_data: dict) -> dict:
             else:
                 unassigned += 1
 
-        workload_lines = [f"• **@{user}**: {cnt} task(s)" for user, cnt in assignee_map.items()]
+        workload_lines = [f"• **@{u}**: {cnt} task(s)" for u, cnt in assignee_map.items()]
         if unassigned > 0:
             workload_lines.append(f"• **Unassigned**: {unassigned} task(s)")
 
@@ -308,7 +381,7 @@ def smart_local_nlp(user_message: str, board_data: dict) -> dict:
         )
         return {"reply": workload_text, "board_update": None}
 
-    # Intent 7: OVERDUE & DEADLINES
+    # Intent 10: OVERDUE & DEADLINES
     if any(k in lower for k in ["overdue", "due", "deadline", "schedule"]):
         due_list = []
         for card in cards.values():
@@ -322,8 +395,8 @@ def smart_local_nlp(user_message: str, board_data: dict) -> dict:
         )
         return {"reply": due_text, "board_update": None}
 
-    # Intent 8: ORGANIZATION & PRIORITIZATION
-    if any(k in lower for k in ["organize", "organization", "prioritize", "suggest", "suggestion", "clean"]):
+    # Intent 11: ORGANIZATION & PRIORITIZATION
+    if any(k in lower for k in ["organize", "organization", "prioritize", "suggest", "suggestion"]):
         high_backlog = 0
         backlog_col = columns[0] if columns else None
         if backlog_col:
@@ -339,8 +412,20 @@ def smart_local_nlp(user_message: str, board_data: dict) -> dict:
         )
         return {"reply": suggest_text, "board_update": None}
 
+    # Default Context-Aware Response
+    total_tasks = len(cards)
+    col_breakdown = ", ".join([f"{c['title']} ({len(c.get('cardIds', []))})" for c in columns])
     return {
-        "reply": f"I processed your prompt: *\"{user_message}\"*. Ask me to summarize project, analyze workload, check overdue tasks, or move cards!",
+        "reply": (
+            f"👋 **Kanban Board Snapshot** ({total_tasks} total tasks)\n\n"
+            f"• **Columns**: {col_breakdown}\n\n"
+            f"You can ask me to:\n"
+            f"• **View Backlog**: *\"What are my backlogs for today?\"*\n"
+            f"• **List Column Tasks**: *\"Show tasks in progress\"*\n"
+            f"• **Move Cards**: *\"Move card-1 to Done\"*\n"
+            f"• **Add Cards**: *\"Add QA Testing to In Progress\"*\n"
+            f"• **Project Summary**: *\"Summarize project\"*"
+        ),
         "board_update": None,
     }
 
@@ -401,3 +486,4 @@ async def chat_with_ai(user_message: str, history: list, board_data: dict):
                 if attempt == 1:
                     logger.error(f"OpenRouter chat error after retries: {str(e)}")
                     return smart_local_nlp(user_message, board_data)
+

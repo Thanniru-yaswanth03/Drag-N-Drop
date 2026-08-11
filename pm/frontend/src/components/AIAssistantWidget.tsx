@@ -114,11 +114,14 @@ export const AIAssistantWidget = ({ board, projectId, onBoardUpdate }: AIAssista
   };
 
   const renderContent = (content: string) => {
-    // Simple markdown renderer for bold text
-    const parts = content.split(/(\*\*.*?\*\*)/g);
+    // Render bold (**text**) and italic (*text*) syntax cleanly
+    const parts = content.split(/(\*\*.*?\*\*|\*.*?\*)/g);
     return parts.map((part, idx) => {
       if (part.startsWith("**") && part.endsWith("**")) {
         return <strong key={idx} className="font-semibold text-[var(--primary-blue)]">{part.slice(2, -2)}</strong>;
+      }
+      if (part.startsWith("*") && part.endsWith("*") && part.length > 2) {
+        return <em key={idx} className="italic text-gray-400">{part.slice(1, -1)}</em>;
       }
       return part;
     });
@@ -173,6 +176,7 @@ export const AIAssistantWidget = ({ board, projectId, onBoardUpdate }: AIAssista
           {/* Quick Suggestion Chips */}
           <div className="flex gap-2 overflow-x-auto px-6 py-3 border-b border-[var(--stroke)] scrollbar-none">
             {[
+              "What are my backlogs for today?",
               "Clear a card from In Progress",
               "Add a task for QA Testing",
               "Move card to Done",
@@ -200,7 +204,7 @@ export const AIAssistantWidget = ({ board, projectId, onBoardUpdate }: AIAssista
                 }`}
               >
                 <div
-                  className={`max-w-[88%] rounded-2xl px-4 py-3 text-xs leading-relaxed ${
+                  className={`max-w-[88%] rounded-2xl px-4 py-3 text-xs leading-relaxed whitespace-pre-wrap ${
                     msg.role === "user"
                       ? "bg-[var(--secondary-purple)] text-white shadow-sm"
                       : "border border-[var(--stroke)] bg-[var(--surface)] text-[var(--navy-dark)]"
