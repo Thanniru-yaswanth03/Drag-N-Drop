@@ -177,3 +177,50 @@ def test_save_board_preserves_project_id():
     assert "p-card-1" in fetched["cards"]
 
 
+def test_card_persistence_across_logout_and_login():
+    reg = database.register_user("persistuser", "pass1234", db_path=TEST_DB_PATH)
+    assert reg["success"]
+    user_name = reg["user"]
+    token1 = reg["token"]
+
+    projects = database.get_projects(user_name, db_path=TEST_DB_PATH)
+    proj_id = projects[0]["id"]
+    board = database.get_board(user_name, db_path=TEST_DB_PATH, project_id=proj_id)
+
+    new_card_id = "card-persistent-100"
+    col_id = board["columns"][0]["id"]
+    card = database.add_card(
+        user_id=user_name,
+        column_id=col_id,
+        card_id=new_card_id,
+        title="Persistent Task Title",
+        details="Task details that must survive logout",
+        priority="high",
+        due_date="2026-10-10",
+        tags=["critical"],
+        db_path=TEST_DB_PATH,
+    )
+    board["cards"][new_card_id] = card
+    board["columns"][0]["cardIds"].append(new_card_id)
+
+    database.save_board(user_name, board, db_path=TEST_DB_PATH, project_id=proj_id)
+
+    # Logout
+    database.revoke_session(token1, db_path=TEST_DB_PATH)
+    assert database.verify_session_token(token1, db_path=TEST_DB_PATH) is None
+
+    # Login
+    auth = database.authenticate_user("persistuser", "pass1234", db_path=TEST_DB_PATH)
+    assert auth is not None
+    token2 = auth["token"]
+    assert database.verify_session_token(token2, db_path=TEST_DB_PATH) is not None
+
+    # Fetch board after login
+    after_login_projects = database.get_projects("persistuser", db_path=TEST_DB_PATH)
+    after_login_board = database.get_board("persistuser", db_path=TEST_DB_PATH, project_id=after_login_projects[0]["id"])
+    assert new_card_id in after_login_board["cards"]
+    assert after_login_board["cards"][new_card_id]["title"] == "Persistent Task Title"
+    assert after_login_board["cards"][new_card_id]["priority"] == "high"
+
+
+

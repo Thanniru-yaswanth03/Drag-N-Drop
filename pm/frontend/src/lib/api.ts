@@ -21,6 +21,32 @@ export const getApiUrl = (path: string) => {
   return path;
 };
 
+export function getAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (typeof localStorage !== "undefined") {
+    const token = localStorage.getItem("pm_auth_token");
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+      headers["X-Session-Token"] = token;
+    }
+  }
+  return headers;
+}
+
+export function getAuthFetchHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {};
+  if (typeof localStorage !== "undefined") {
+    const token = localStorage.getItem("pm_auth_token");
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+      headers["X-Session-Token"] = token;
+    }
+  }
+  return headers;
+}
+
 export async function registerApi(username: string, password: string) {
   const cleanUsername = username.trim().toLowerCase();
   try {
@@ -32,12 +58,15 @@ export async function registerApi(username: string, password: string) {
     const data = await response.json().catch(() => ({}));
     if (response.ok && data.success) {
       if (typeof localStorage !== "undefined") {
+        if (data.token) {
+          localStorage.setItem("pm_auth_token", data.token);
+        }
         const localUsers = JSON.parse(localStorage.getItem("pm_registered_users") || "{}");
         localUsers[cleanUsername] = password;
         localUsers[username.trim()] = password;
         localStorage.setItem("pm_registered_users", JSON.stringify(localUsers));
       }
-      return { success: true, user: data.user || cleanUsername };
+      return { success: true, user: data.user || cleanUsername, token: data.token };
     }
     return { success: false, error: data.detail || "Registration failed" };
   } catch (error) {
@@ -55,7 +84,10 @@ export async function registerApi(username: string, password: string) {
 
 export async function fetchProjects(username: string = "user"): Promise<Project[]> {
   try {
-    const response = await fetch(getApiUrl(`/api/projects?username=${encodeURIComponent(username)}`));
+    const response = await fetch(
+      getApiUrl(`/api/projects?username=${encodeURIComponent(username)}`),
+      { headers: getAuthFetchHeaders() }
+    );
     if (!response.ok) {
       throw new Error(`Failed to fetch projects: ${response.statusText}`);
     }
@@ -73,7 +105,7 @@ export async function createProjectApi(
   try {
     const response = await fetch(getApiUrl(`/api/projects?username=${encodeURIComponent(username)}`), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ name }),
     });
     if (response.ok) {
@@ -95,7 +127,7 @@ export async function updateProjectApi(
       getApiUrl(`/api/projects/${encodeURIComponent(projectId)}?username=${encodeURIComponent(username)}`),
       {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ name }),
       }
     );
@@ -117,6 +149,7 @@ export async function deleteProjectApi(
       getApiUrl(`/api/projects/${encodeURIComponent(projectId)}?username=${encodeURIComponent(username)}`),
       {
         method: "DELETE",
+        headers: getAuthFetchHeaders(),
       }
     );
     return response.ok;
@@ -135,7 +168,9 @@ export async function fetchBoard(
     if (projectId) {
       path += `&project_id=${encodeURIComponent(projectId)}`;
     }
-    const response = await fetch(getApiUrl(path));
+    const response = await fetch(getApiUrl(path), {
+      headers: getAuthFetchHeaders(),
+    });
     if (!response.ok) {
       throw new Error(`Failed to fetch board: ${response.statusText}`);
     }
@@ -162,7 +197,7 @@ export async function saveBoard(
     }
     const response = await fetch(getApiUrl(path), {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       body: JSON.stringify(boardData),
     });
     return response.ok;
@@ -188,7 +223,7 @@ export async function createCardApi(
   try {
     const response = await fetch(getApiUrl(`/api/cards?username=${encodeURIComponent(username)}`), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ columnId, title, details, ...extraFields }),
     });
     if (response.ok) {
@@ -218,7 +253,7 @@ export async function updateCardApi(
     const activeUser = username !== "user" ? username : (typeof localStorage !== "undefined" ? localStorage.getItem("pm_auth_user") || "user" : "user");
     const response = await fetch(getApiUrl(`/api/cards/${encodeURIComponent(cardId)}?username=${encodeURIComponent(activeUser)}`), {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       body: JSON.stringify(cardData),
     });
     if (response.ok) {
@@ -236,6 +271,7 @@ export async function deleteCardApi(cardId: string, username: string = "user") {
     const activeUser = username !== "user" ? username : (typeof localStorage !== "undefined" ? localStorage.getItem("pm_auth_user") || "user" : "user");
     const response = await fetch(getApiUrl(`/api/cards/${encodeURIComponent(cardId)}?username=${encodeURIComponent(activeUser)}`), {
       method: "DELETE",
+      headers: getAuthFetchHeaders(),
     });
     return response.ok;
   } catch (error) {
@@ -262,7 +298,8 @@ export async function fetchProjectActivity(
 ): Promise<ActivityItem[]> {
   try {
     const response = await fetch(
-      getApiUrl(`/api/projects/${encodeURIComponent(projectId)}/activity?username=${encodeURIComponent(username)}`)
+      getApiUrl(`/api/projects/${encodeURIComponent(projectId)}/activity?username=${encodeURIComponent(username)}`),
+      { headers: getAuthFetchHeaders() }
     );
     if (response.ok) {
       const data = await response.json();
@@ -288,7 +325,8 @@ export async function fetchProjectMembers(
 ): Promise<{ members: ProjectMember[]; userRole: string }> {
   try {
     const response = await fetch(
-      getApiUrl(`/api/projects/${encodeURIComponent(projectId)}/members?username=${encodeURIComponent(username)}`)
+      getApiUrl(`/api/projects/${encodeURIComponent(projectId)}/members?username=${encodeURIComponent(username)}`),
+      { headers: getAuthFetchHeaders() }
     );
     if (response.ok) {
       const data = await response.json();
@@ -314,7 +352,7 @@ export async function addProjectMemberApi(
       getApiUrl(`/api/projects/${encodeURIComponent(projectId)}/members?username=${encodeURIComponent(requestingUsername)}`),
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ username: targetUsername, role }),
       }
     );
@@ -339,7 +377,10 @@ export async function removeProjectMemberApi(
       getApiUrl(
         `/api/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(targetUsername)}?username=${encodeURIComponent(requestingUsername)}`
       ),
-      { method: "DELETE" }
+      {
+        method: "DELETE",
+        headers: getAuthFetchHeaders(),
+      }
     );
     const data = await response.json().catch(() => ({}));
     if (response.ok && data.success) {
@@ -367,7 +408,8 @@ export async function fetchNotificationsApi(
 ): Promise<{ notifications: NotificationItem[]; unreadCount: number }> {
   try {
     const response = await fetch(
-      getApiUrl(`/api/notifications?username=${encodeURIComponent(username)}`)
+      getApiUrl(`/api/notifications?username=${encodeURIComponent(username)}`),
+      { headers: getAuthFetchHeaders() }
     );
     if (response.ok) {
       const data = await response.json();
@@ -391,7 +433,10 @@ export async function markNotificationReadApi(
       getApiUrl(
         `/api/notifications/${encodeURIComponent(notificationId)}/read?username=${encodeURIComponent(username)}`
       ),
-      { method: "PUT" }
+      {
+        method: "PUT",
+        headers: getAuthFetchHeaders(),
+      }
     );
     return response.ok;
   } catch (error) {
@@ -404,7 +449,10 @@ export async function markAllNotificationsReadApi(username: string = "user") {
   try {
     const response = await fetch(
       getApiUrl(`/api/notifications/read-all?username=${encodeURIComponent(username)}`),
-      { method: "POST" }
+      {
+        method: "POST",
+        headers: getAuthHeaders(),
+      }
     );
     return response.ok;
   } catch (error) {

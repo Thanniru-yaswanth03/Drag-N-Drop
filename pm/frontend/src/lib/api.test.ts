@@ -21,6 +21,7 @@ describe("api client", () => {
     expect(result).toEqual(mockBoardResponse);
     expect(fetch).toHaveBeenCalledWith(
       expect.stringMatching(/\/api\/board\?username=user/),
+      expect.objectContaining({ headers: expect.any(Object) })
     );
   });
 

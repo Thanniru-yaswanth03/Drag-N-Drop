@@ -119,13 +119,10 @@ export const KanbanBoard = () => {
     if (!user) {
       setProjects([]);
       setActiveProjectId(null);
-      setBoard(initialData);
       return;
     }
 
-    setProjects([]);
-    setActiveProjectId(null);
-
+    setIsLoadingBoard(true);
     fetchProjects(user).then((projs) => {
       const safeProjs = Array.isArray(projs) ? projs : [];
       setProjects(safeProjs);
@@ -133,6 +130,8 @@ export const KanbanBoard = () => {
         const savedActiveId = localStorage.getItem(`kanban_active_project_${user}`);
         const found = safeProjs.find((p) => p.id === savedActiveId);
         setActiveProjectId(found ? found.id : safeProjs[0].id);
+      } else {
+        setIsLoadingBoard(false);
       }
     });
   }, [user]);
@@ -143,21 +142,9 @@ export const KanbanBoard = () => {
     localStorage.setItem(`kanban_active_project_${user}`, activeProjectId);
     setIsLoadingBoard(true);
 
-    const localCached = localStorage.getItem(`kanban_board_${user}_${activeProjectId}`);
-    if (localCached) {
-      try {
-        const parsed = JSON.parse(localCached);
-        if (parsed && parsed.columns && parsed.columns.length > 0) {
-          setBoard(parsed);
-        }
-      } catch {
-        // Ignore JSON parse failure
-      }
-    }
-
     fetchBoard(user, activeProjectId)
       .then((data) => {
-        if (data && data.columns && data.columns.length > 0) {
+        if (data && data.columns) {
           resetBoard(data);
           localStorage.setItem(`kanban_board_${user}_${activeProjectId}`, JSON.stringify(data));
         }
@@ -317,7 +304,9 @@ export const KanbanBoard = () => {
         const authedUser = data.user || cleanUser;
         setProjects([]);
         setActiveProjectId(null);
-        setBoard(initialData);
+        if (data.token) {
+          localStorage.setItem("pm_auth_token", data.token);
+        }
         localStorage.setItem("pm_auth_user", authedUser);
         setUser(authedUser);
         return true;
@@ -334,7 +323,6 @@ export const KanbanBoard = () => {
       ) {
         setProjects([]);
         setActiveProjectId(null);
-        setBoard(initialData);
         localStorage.setItem("pm_auth_user", cleanUser);
         setUser(cleanUser);
         return true;
@@ -344,7 +332,6 @@ export const KanbanBoard = () => {
     if ((cleanUser === "user" || cleanUser === "testuser") && password === "password") {
       setProjects([]);
       setActiveProjectId(null);
-      setBoard(initialData);
       localStorage.setItem("pm_auth_user", cleanUser);
       setUser(cleanUser);
       return true;
@@ -355,14 +342,20 @@ export const KanbanBoard = () => {
 
   const handleLogout = async () => {
     try {
-      await fetch(getApiUrl("/api/auth/logout"), { method: "POST" });
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      const token = localStorage.getItem("pm_auth_token");
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+        headers["X-Session-Token"] = token;
+      }
+      await fetch(getApiUrl("/api/auth/logout"), { method: "POST", headers });
     } catch {
       // Ignore network failure on logout
     }
     localStorage.removeItem("pm_auth_user");
+    localStorage.removeItem("pm_auth_token");
     setProjects([]);
     setActiveProjectId(null);
-    setBoard(initialData);
     setUser(null);
   };
 
@@ -378,76 +371,68 @@ export const KanbanBoard = () => {
       return;
     }
 
-    setBoard((prev) => {
-      const nextColumns = moveCard(prev.columns, active.id as string, over.id as string);
-      const nextBoard = { ...prev, columns: nextColumns };
-      persistBoard(nextBoard);
-      return nextBoard;
-    });
+    const nextColumns = moveCard(board.columns, active.id as string, over.id as string);
+    const nextBoard = { ...board, columns: nextColumns };
+    setBoard(nextBoard);
+    persistBoard(nextBoard);
   };
 
   const handleRenameColumn = (columnId: string, title: string) => {
-    setBoard((prev) => {
-      const nextBoard = {
-        ...prev,
-        columns: prev.columns.map((column) =>
-          column.id === columnId ? { ...column, title } : column
-        ),
-      };
-      persistBoard(nextBoard);
-      return nextBoard;
-    });
+    const nextBoard = {
+      ...board,
+      columns: board.columns.map((column) =>
+        column.id === columnId ? { ...column, title } : column
+      ),
+    };
+    setBoard(nextBoard);
+    persistBoard(nextBoard);
   };
 
   const handleAddCard = (columnId: string, title: string, details: string) => {
     const id = createId("card");
     const now = new Date().toISOString();
-    setBoard((prev) => {
-      const nextBoard = {
-        ...prev,
-        cards: {
-          ...prev.cards,
-          [id]: {
-            id,
-            title,
-            details: details || "No details yet.",
-            description: details || "No details yet.",
-            priority: "medium" as const,
-            createdAt: now,
-            updatedAt: now,
-          },
+    const nextBoard = {
+      ...board,
+      cards: {
+        ...board.cards,
+        [id]: {
+          id,
+          title,
+          details: details || "No details yet.",
+          description: details || "No details yet.",
+          priority: "medium" as const,
+          createdAt: now,
+          updatedAt: now,
         },
-        columns: prev.columns.map((column) =>
-          column.id === columnId
-            ? { ...column, cardIds: [...column.cardIds, id] }
-            : column
-        ),
-      };
-      persistBoard(nextBoard);
-      return nextBoard;
-    });
+      },
+      columns: board.columns.map((column) =>
+        column.id === columnId
+          ? { ...column, cardIds: [...column.cardIds, id] }
+          : column
+      ),
+    };
+    setBoard(nextBoard);
+    persistBoard(nextBoard);
   };
 
   const handleDeleteCard = (columnId: string, cardId: string) => {
-    deleteCardApi(cardId);
-    setBoard((prev) => {
-      const nextBoard = {
-        ...prev,
-        cards: Object.fromEntries(
-          Object.entries(prev.cards).filter(([id]) => id !== cardId)
-        ),
-        columns: prev.columns.map((column) =>
-          column.id === columnId
-            ? {
-                ...column,
-                cardIds: column.cardIds.filter((id) => id !== cardId),
-              }
-            : column
-        ),
-      };
-      persistBoard(nextBoard);
-      return nextBoard;
-    });
+    deleteCardApi(cardId, user || "user");
+    const nextBoard = {
+      ...board,
+      cards: Object.fromEntries(
+        Object.entries(board.cards).filter(([id]) => id !== cardId)
+      ),
+      columns: board.columns.map((column) =>
+        column.id === columnId
+          ? {
+              ...column,
+              cardIds: column.cardIds.filter((id) => id !== cardId),
+            }
+          : column
+      ),
+    };
+    setBoard(nextBoard);
+    persistBoard(nextBoard);
   };
 
   const handleSaveCard = async (
@@ -460,51 +445,44 @@ export const KanbanBoard = () => {
     assignee?: string | null
   ) => {
     const now = new Date().toISOString();
-    let nextBoardData: BoardData | null = null;
+    const card = board.cards[cardId];
+    if (!card) return;
 
-    setBoard((prev) => {
-      const card = prev.cards[cardId];
-      if (!card) return prev;
-      const updatedCard: Card = {
-        ...card,
-        title,
-        details,
-        description: details,
-        priority,
-        dueDate: dueDate !== undefined ? dueDate : card.dueDate,
-        tags: tags !== undefined ? tags : card.tags,
-        assignee: assignee !== undefined ? assignee : card.assignee,
-        updatedAt: now,
-      };
-      nextBoardData = {
-        ...prev,
-        cards: {
-          ...prev.cards,
-          [cardId]: updatedCard,
-        },
-      };
-      if (user && activeProjectId) {
-        localStorage.setItem(
-          `kanban_board_${user}_${activeProjectId}`,
-          JSON.stringify(nextBoardData)
-        );
-      }
-      return nextBoardData;
-    });
-
-    await updateCardApi(cardId, {
+    const updatedCard: Card = {
+      ...card,
       title,
       details,
       description: details,
       priority,
-      dueDate,
-      tags,
-      assignee,
-    });
+      dueDate: dueDate !== undefined ? dueDate : card.dueDate,
+      tags: tags !== undefined ? tags : card.tags,
+      assignee: assignee !== undefined ? assignee : card.assignee,
+      updatedAt: now,
+    };
 
-    if (user && nextBoardData) {
-      await saveBoard(user, nextBoardData, activeProjectId || undefined);
-    }
+    const nextBoardData: BoardData = {
+      ...board,
+      cards: {
+        ...board.cards,
+        [cardId]: updatedCard,
+      },
+    };
+
+    setBoard(nextBoardData);
+    await updateCardApi(
+      cardId,
+      {
+        title,
+        details,
+        description: details,
+        priority,
+        dueDate,
+        tags,
+        assignee,
+      },
+      user || "user"
+    );
+    await persistBoard(nextBoardData);
   };
 
   const handleResetBoard = async () => {

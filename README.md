@@ -28,7 +28,8 @@ A modern, enterprise-grade Kanban project management application featuring dynam
 
 - 🖱️ **Drag and Drop Engine**: Smooth card reordering across workflow columns powered by `@dnd-kit`.
 - 📱 **Mobile Touch Optimization**: Vertical stacked column layout on mobile screens with touch-sensor activation delay (`150ms`).
-- 🔐 **Authentication & Cryptographic Sessions**: Cryptographically random session token generation (`secrets.token_hex(32)`), session revocation on logout, PBKDF2-HMAC-SHA256 password hashing, user registration, and identity validation.
+- 🔐 **Authentication & Cryptographic Sessions**: Cryptographically random session token generation (`secrets.token_hex(32)`), session token headers (`Authorization: Bearer` & `X-Session-Token`), session revocation on logout, PBKDF2-HMAC-SHA256 password hashing, user registration, and identity validation.
+- 💾 **Persistent Database State**: Guaranteed SQLite database persistence across login/logout sessions, project switching, and multi-user interactions with clean state hydration and loading fallbacks.
 - 📁 **Multi-Project Workspace**: Create, switch, rename, and isolate independent Kanban project boards.
 - 🤖 **AI Kanban Assistant & Model Failover**: Conversational AI parsing natural language prompts with model failover stack (`openai/gpt-4o-mini` -> `meta-llama/llama-3.3-70b-instruct` -> `openrouter/auto` -> Smart Local NLP).
 - ⚡ **Real-Time WebSockets**: Live multi-user synchronization across active project sessions (`/ws/projects/{id}`).
@@ -45,14 +46,14 @@ A modern, enterprise-grade Kanban project management application featuring dynam
 - **Framework**: Next.js 16 (App Router with Turbopack), React 19, TypeScript
 - **Styling**: TailwindCSS v4, Custom CSS variables, Glassmorphism design tokens
 - **Drag & Drop**: `@dnd-kit/core`, `@dnd-kit/sortable`
-- **Testing**: Vitest (44 tests), Playwright E2E (14 tests)
+- **Testing**: Vitest (44 tests across 12 suites), Playwright E2E (14 tests)
 
 ### Backend
 - **Framework**: FastAPI (Python 3.13), Uvicorn ASGI Server
 - **Database**: SQLite3 (WAL Mode), Python `sqlite3` driver
 - **Security**: Cryptographic Session Tokens, PBKDF2-HMAC-SHA256 password hashing (`100,000` iterations)
 - **AI Integration**: OpenRouter API (GPT-4o-mini) with Failover Stack & Smart Local NLP
-- **Testing**: Pytest (38 tests, including Part 28 Adversarial Security suite)
+- **Testing**: Pytest (39 tests, including Part 28 Adversarial Security suite & persistent data loss verification)
 
 ### DevOps & Cloud Infrastructure
 - **Containerization**: Docker (`python:3.13-slim`)

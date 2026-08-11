@@ -619,7 +619,14 @@ def get_board(user_id: str = "user", db_path: Path = None, project_id: str = Non
         board_row = cursor.fetchone()
         if not board_row:
             conn.close()
-            return None
+            if check_user_permission(project_id, user_id, "viewer", db_path=db_path):
+                conn = get_db_connection(db_path)
+                cursor = conn.cursor()
+                board_id = project_id
+            else:
+                return None
+        else:
+            board_id = board_row["id"]
     else:
         cursor.execute("SELECT id FROM boards WHERE user_id = ? ORDER BY created_at ASC", (internal_user_id,))
         board_row = cursor.fetchone()
@@ -712,8 +719,14 @@ def save_board(user_id: str, board_data: dict, db_path: Path = None, project_id:
         board_row = cursor.fetchone()
         if not board_row:
             conn.close()
-            return None
-        board_id = board_row["id"]
+            if check_user_permission(project_id, user_id, "member", db_path=db_path):
+                conn = get_db_connection(db_path)
+                cursor = conn.cursor()
+                board_id = project_id
+            else:
+                return None
+        else:
+            board_id = board_row["id"]
     else:
         cursor.execute("SELECT id FROM boards WHERE user_id = ? ORDER BY created_at ASC", (internal_user_id,))
         board_row = cursor.fetchone()
