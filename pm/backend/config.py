@@ -13,10 +13,8 @@ env_candidates = [
 
 for env_path in env_candidates:
     if env_path.exists():
-        load_dotenv(env_path)
-        break
-else:
-    load_dotenv()
+        load_dotenv(env_path, override=True)
+load_dotenv(override=True)
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini").strip()

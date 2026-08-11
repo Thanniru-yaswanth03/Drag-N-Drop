@@ -74,8 +74,9 @@ Rules for answering questions & board updates:
 2. Creating cards: If the user asks to add/create a card (e.g. 'Add QA Testing to In Progress'), add a new card entry to 'cards' and append its ID to the target column's 'cardIds'.
 3. Moving cards: If the user asks to move a card (e.g. 'Move card-1 to Done' or 'shift roadmap to Review'), remove its ID from the source column 'cardIds' and append it to the target column 'cardIds'.
 4. Deleting/Clearing cards: If the user asks to clear or delete a card or clear a column (e.g. 'clear card from progress' or 'delete card-2'), remove the card ID from 'cardIds' and delete it from 'cards'.
-5. Column Renaming: If the user asks to rename a column (e.g. 'Rename Backlog to Upcoming'), update the title of that column in 'columns'.
-6. Return ONLY raw valid JSON string without markdown wrappers."""
+5. Clearing whole board: If the user asks to 'clear the board', 'empty board', 'wipe board', 'delete all cards', set all column 'cardIds' arrays to [] and set 'cards' to {}. Return a clear confirmation in 'reply'.
+6. Column Renaming: If the user asks to rename a column (e.g. 'Rename Backlog to Upcoming'), update the title of that column in 'columns'.
+7. Return ONLY raw valid JSON string without markdown wrappers."""
 
 
 def smart_local_nlp(user_message: str, board_data: dict) -> dict:
@@ -158,8 +159,16 @@ def smart_local_nlp(user_message: str, board_data: dict) -> dict:
         lines.append(f"\n💡 *Tip: Ask me to move any card to 'In Progress' or 'Done', or edit card details!*")
         return "\n".join(lines)
 
-    # Intent 1: CLEAR / DELETE / REMOVE / CLEAN
-    if any(k in lower for k in ["clear", "delete", "remove", "drop", "clean", "erase"]):
+    # Intent 1: CLEAR / DELETE / REMOVE / CLEAN / EMPTY / WIPE
+    if any(k in lower for k in ["clear", "delete", "remove", "drop", "clean", "erase", "empty", "wipe"]):
+        # Check if user wants to clear the ENTIRE board
+        if any(k in lower for k in ["board", "all cards", "everything", "entire board", "whole board"]) and not match_column(lower):
+            updated_cols = [{**col, "cardIds": []} for col in columns]
+            return {
+                "reply": "Cleared all cards from the board! The board is now completely empty. 🧼",
+                "board_update": {"columns": updated_cols, "cards": {}},
+            }
+
         if "all" in lower or "everything" in lower:
             target_col = match_column(lower)
             if target_col:
@@ -448,20 +457,28 @@ async def chat_with_ai(user_message: str, history: list, board_data: dict):
     prompt_content = f"Current Kanban Board JSON:\n{json.dumps(board_data)}\n\nUser Request:\n{user_message}"
     messages.append({"role": "user", "content": prompt_content})
 
-    payload = {
-        "model": config.OPENROUTER_MODEL,
-        "messages": messages,
-        "temperature": 0.2,
-        "response_format": {"type": "json_object"},
-    }
+    models_to_try = [
+        config.OPENROUTER_MODEL,
+        "meta-llama/llama-3.3-70b-instruct",
+        "openrouter/auto",
+    ]
 
     async with httpx.AsyncClient(timeout=15.0) as client:
-        for attempt in range(2):
+        for model in models_to_try:
+            payload = {
+                "model": model,
+                "messages": messages,
+                "temperature": 0.2,
+                "response_format": {"type": "json_object"},
+            }
             try:
                 response = await client.post(
                     config.OPENROUTER_URL, headers=headers, json=payload
                 )
-                response.raise_for_status()
+                if response.status_code != 200:
+                    logger.warning(f"OpenRouter model {model} status {response.status_code}: {response.text[:150]}")
+                    continue
+
                 data = response.json()
                 content = (
                     data.get("choices", [{}])[0]
@@ -482,8 +499,8 @@ async def chat_with_ai(user_message: str, history: list, board_data: dict):
                     "board_update": parsed.get("board_update"),
                 }
             except Exception as e:
-                logger.warning(f"OpenRouter attempt {attempt + 1} failed: {str(e)}")
-                if attempt == 1:
-                    logger.error(f"OpenRouter chat error after retries: {str(e)}")
-                    return smart_local_nlp(user_message, board_data)
+                logger.warning(f"OpenRouter model {model} attempt failed: {str(e)}")
+
+    # Fallback to local smart NLP
+    return smart_local_nlp(user_message, board_data)
 
