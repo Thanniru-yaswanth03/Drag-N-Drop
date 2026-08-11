@@ -2068,3 +2068,822 @@ The project is considered complete only when:
 * The project can be confidently presented as a serious full-stack engineering project.
 
 Do not add new product features during this part unless required to resolve a discovered reliability, security, accessibility, or production-readiness issue.
+# PART 29 — FINAL ENGINEERING QUALITY, AUTHENTICATION HARDENING & RELEASE VERIFICATION
+
+You are working on the existing repository:
+
+https://github.com/Thanniru-yaswanth03/Drag-N-Drop
+
+Do NOT create a new feature branch or redesign the application unnecessarily.
+
+Parts 1–28 have already been implemented.
+
+Your job is to complete and verify Part 29.
+
+Treat the CURRENT SOURCE CODE as the source of truth.
+
+Do NOT trust previously marked `[x]` checklist items, README claims, previous agent reports, or assumptions.
+
+---
+
+# PHASE 1 — INSPECT BEFORE MODIFYING
+
+First inspect the current implementation.
+
+Read:
+
+* `docs/PLAN.md`
+* `AGENTS.md`
+* backend documentation
+* frontend documentation
+* `README.md`
+* `pm/README.md`
+* backend authentication/session code
+* backend authorization dependencies
+* database/session implementation
+* WebSocket implementation
+* AI implementation
+* frontend authentication/API client
+* localStorage/sessionStorage usage
+* tests
+* Docker configuration
+* deployment configuration
+* environment configuration
+
+Determine the CURRENT state of:
+
+1. Authentication
+2. Session/token verification
+3. Authorization/RBAC
+4. Multi-user isolation
+5. WebSocket authentication
+6. AI authorization
+7. Database integrity
+8. Frontend state synchronization
+9. Testing
+10. Production configuration
+
+Do not modify code during this inspection phase.
+
+---
+
+# PHASE 2 — CRITICAL AUTHENTICATION FIX
+
+The current implementation contains logic similar to:
+
+```python
+if token:
+    sess = database.verify_session_token(token)
+    if sess:
+        return sess["username"]
+
+if username and isinstance(username, str) and username.strip():
+    return username.strip().lower()
+
+return "user"
+```
+
+This is NOT acceptable for protected endpoints.
+
+The security model must be:
+
+```text
+Valid authentication credential
+        ↓
+Authenticated identity
+        ↓
+Authorization check
+        ↓
+Request allowed
+```
+
+OR:
+
+```text
+Missing/invalid authentication
+        ↓
+HTTP 401 Unauthorized
+```
+
+There must be NO fallback from invalid/missing authentication to:
+
+* client-provided username
+* query-string username
+* request-body username
+* `"user"`
+* `"testuser"`
+* any default identity
+
+---
+
+# PHASE 3 — REMOVE CLIENT-CONTROLLED IDENTITY FALLBACKS
+
+Audit every protected endpoint.
+
+Remove authentication behavior based on:
+
+```text
+?username=
+username=
+username: str = "user"
+username: str = "testuser"
+```
+
+unless the value is being used purely as non-security metadata and is independently verified against the authenticated identity.
+
+The server must derive the current user from the authenticated session/token.
+
+Examples of protected areas:
+
+* `/api/auth/me`
+* `/api/projects`
+* `/api/board`
+* `/api/cards`
+* `/api/columns`
+* `/api/activity`
+* `/api/notifications`
+* `/api/members`
+* `/api/ai`
+* WebSockets
+
+Do not merely remove the parameter from the frontend.
+
+The BACKEND must reject unauthenticated access.
+
+---
+
+# PHASE 4 — AUTHENTICATION DEPENDENCY
+
+Create/use one authoritative authentication dependency.
+
+For example conceptually:
+
+```python
+current_user = require_authenticated_user(request)
+```
+
+The exact implementation is your architectural decision.
+
+It must:
+
+1. Extract the authentication credential.
+2. Validate it.
+3. Verify expiration.
+4. Verify revocation.
+5. Resolve the user ID.
+6. Return the authenticated user.
+7. Raise HTTP 401 when authentication fails.
+
+Protected endpoints should use this identity rather than independently implementing authentication.
+
+Do not duplicate authentication logic across dozens of endpoints.
+
+---
+
+# PHASE 5 — AUTH ME
+
+`GET /api/auth/me` must:
+
+* require valid authentication
+* derive identity from the authentication credential
+* return the authenticated user's actual information
+* return 401 when unauthenticated
+
+This must NOT work:
+
+```text
+GET /api/auth/me?username=another_user
+```
+
+unless the request also contains valid authentication proving that identity.
+
+---
+
+# PHASE 6 — LOGOUT
+
+Verify logout properly invalidates the authenticated session.
+
+Test:
+
+1. Login.
+2. Receive valid credential.
+3. Access protected endpoint successfully.
+4. Logout.
+5. Reuse the old credential.
+6. Protected endpoint must reject it.
+
+Do not simply return:
+
+```json
+{"success": true}
+```
+
+without changing authentication state.
+
+---
+
+# PHASE 7 — SESSION/TOKEN SECURITY
+
+Audit the session implementation.
+
+Verify:
+
+* cryptographically secure token generation
+* sufficient token entropy
+* expiration
+* revocation
+* logout invalidation
+* no deterministic token generation
+* no username-derived authentication secret
+* no plaintext password storage
+* no authentication secrets in logs
+
+If tokens are stored server-side, ensure appropriate storage and lookup behavior.
+
+If using JWT, verify signature and claims correctly.
+
+Do not introduce JWT merely because it sounds impressive. Use the simplest secure mechanism appropriate for the current architecture.
+
+---
+
+# PHASE 8 — PASSWORD SECURITY
+
+Audit password handling.
+
+Verify:
+
+* unique random salt per password
+* secure password hashing
+* appropriate work factor
+* constant-time verification
+* no plaintext passwords
+* no passwords in logs
+* no passwords in API responses
+* no passwords in localStorage
+* no passwords in sessionStorage
+
+Remove any development behavior that stores plaintext credentials in browser storage.
+
+---
+
+# PHASE 9 — DEVELOPMENT CREDENTIALS
+
+Search the entire repository for:
+
+```text
+password
+testuser
+"password"
+"user"
+default credentials
+hardcoded credentials
+```
+
+Determine whether any development/test credentials can reach production.
+
+Development fixtures are acceptable only when explicitly isolated from production.
+
+Production must NOT silently create or accept:
+
+```text
+user / password
+testuser / password
+```
+
+or equivalent fallback credentials.
+
+---
+
+# PHASE 10 — AUTHORIZATION
+
+After authentication is fixed, audit authorization independently.
+
+Every protected resource must verify:
+
+```text
+Authenticated User
+        ↓
+Resource
+        ↓
+Ownership / Membership
+        ↓
+Role Permission
+        ↓
+Allowed
+```
+
+Test:
+
+* User A → User A project → allowed
+* User A → User B project → rejected
+* User A → User B card → rejected
+* User A → User B activity → rejected
+* User A → User B notification → rejected
+* User A → unauthorized membership → rejected
+
+Test all roles:
+
+* Owner
+* Admin
+* Member
+* Viewer
+
+Backend authorization must remain authoritative even if the frontend hides controls.
+
+---
+
+# PHASE 11 — WEBSOCKET AUTHENTICATION
+
+Audit WebSocket authentication.
+
+The WebSocket must NOT trust:
+
+```text
+?username=
+```
+
+as proof of identity.
+
+Require valid authentication.
+
+Then verify the authenticated user is authorized to access the requested project.
+
+Test:
+
+* unauthenticated connection
+* invalid token
+* expired token
+* revoked token
+* User A → User B project
+* removed member reconnecting
+* unauthorized broadcast
+* malformed message
+* oversized message
+
+---
+
+# PHASE 12 — AI SECURITY
+
+Audit:
+
+```text
+/api/ai/test
+/api/ai/chat
+```
+
+Verify:
+
+* authentication
+* project authorization
+* request size limits
+* history limits
+* rate limiting
+* timeout handling
+* safe error handling
+* structured output validation
+
+AI-generated mutations MUST NOT be trusted directly.
+
+Validate:
+
+* project ID
+* card ID
+* column ID
+* mutation type
+* role
+* priority
+* dates
+* payload size
+* referenced resources
+
+The AI must never bypass the normal authorization layer.
+
+---
+
+# PHASE 13 — INPUT VALIDATION
+
+Audit all Pydantic models.
+
+Fix mutable defaults such as:
+
+```python
+tags: Optional[List[str]] = []
+history: Optional[List[Dict[str, str]]] = []
+```
+
+Use appropriate `default_factory`.
+
+Review unconstrained fields.
+
+Where appropriate use:
+
+* enums
+* minimum lengths
+* maximum lengths
+* numeric bounds
+* pagination limits
+* request-size limits
+
+At minimum review:
+
+* usernames
+* passwords
+* project names
+* card titles
+* descriptions
+* tags
+* roles
+* priorities
+* dates
+* pagination
+* AI prompts
+* AI history
+
+---
+
+# PHASE 14 — FRONTEND STORAGE
+
+Search all frontend code for:
+
+```text
+localStorage
+sessionStorage
+document.cookie
+```
+
+Verify that sensitive authentication information is not stored insecurely.
+
+Specifically ensure:
+
+* passwords are never stored
+* secrets are not stored unnecessarily
+* logout clears user-specific state
+* switching users cannot expose cached data from another user
+* stale project state cannot leak between projects
+
+---
+
+# PHASE 15 — TESTING
+
+Add regression tests for every security issue fixed.
+
+Minimum required tests:
+
+### Authentication
+
+* [x] unauthenticated request → 401
+* [x] invalid token → 401
+* [x] expired token → 401
+* [x] revoked token → 401
+* [x] valid token → authenticated
+* [x] username query parameter cannot impersonate user
+* [x] `/api/auth/me` requires authentication
+* [x] logout invalidates token/session
+
+### Authorization
+
+* [x] User A cannot access User B project
+* [x] User A cannot access User B card
+* [x] User A cannot access User B activity
+* [x] User A cannot access User B notification
+* [x] Viewer cannot mutate
+* [x] Member cannot perform admin actions
+
+### WebSocket
+
+* [x] unauthenticated connection rejected
+* [x] invalid token rejected
+* [x] unauthorized project rejected
+* [x] cross-project messages isolated
+
+### AI
+
+* [x] unauthenticated AI request rejected
+* [x] unauthorized project rejected
+* [x] malformed AI output rejected
+* [x] invalid card/column IDs rejected
+* [x] oversized AI request rejected
+
+### Storage
+
+* [x] password never persisted to browser storage
+* [x] logout clears sensitive client state
+
+---
+
+# PHASE 16 — FULL PROJECT QUALITY AUDIT
+
+After security fixes, inspect:
+
+### Backend
+
+* unused code
+* duplicated logic
+* dead code
+* debug prints
+* inconsistent errors
+* typing
+* database transactions
+* exception handling
+
+### Frontend
+
+* unused components
+* unused imports
+* unnecessary renders
+* stale state
+* race conditions
+* duplicated API logic
+* TypeScript errors
+
+Do not perform cosmetic refactoring unless it improves maintainability or correctness.
+
+---
+
+# PHASE 17 — TYPE CHECKING & LINTING
+
+Run:
+
+* frontend lint
+* TypeScript type checking
+* backend lint/type checking if configured
+
+Fix real issues.
+
+Do NOT silence errors with broad disable comments simply to achieve a green build.
+
+---
+
+# PHASE 18 — COMPLETE TEST SUITE
+
+Run the actual test suites.
+
+Do not trust README numbers.
+
+Report the real results for:
+
+* backend tests
+* frontend tests
+* Playwright tests
+* security tests
+* WebSocket tests
+* AI tests
+
+If tests fail:
+
+1. Investigate.
+2. Fix the underlying issue.
+3. Re-run.
+4. Do not hide or skip the test.
+
+---
+
+# PHASE 19 — PRODUCTION BUILD
+
+Verify:
+
+* frontend production build
+* backend startup
+* Docker build
+* Docker container startup
+* health endpoint
+* frontend/backend communication
+* WebSocket connection
+* AI connectivity
+* production environment variables
+
+No production build should depend on local-only files or secrets.
+
+---
+
+# PHASE 20 — DEPLOYMENT VERIFICATION
+
+Verify the actual deployed application.
+
+Check:
+
+* login
+* registration
+* logout
+* authentication persistence
+* project creation
+* project switching
+* card CRUD
+* drag-and-drop
+* RBAC
+* WebSockets
+* AI
+* notifications
+* mobile layout
+
+Specifically test:
+
+```text
+Open production site
+        ↓
+Do NOT authenticate
+        ↓
+Attempt protected API request
+        ↓
+Must receive 401
+```
+
+Then:
+
+```text
+Login as User A
+        ↓
+Attempt to request User B resources
+        ↓
+Must receive authorization failure
+```
+
+Then:
+
+```text
+Logout
+        ↓
+Reuse previous credential
+        ↓
+Must receive 401
+```
+
+---
+
+# PHASE 21 — REPOSITORY HYGIENE
+
+Search for:
+
+* `.env`
+* API keys
+* passwords
+* tokens
+* local databases
+* `node_modules`
+* virtual environments
+* build artifacts
+* temporary files
+* debug files
+
+Ensure `.gitignore` is correct.
+
+If any secret was ever committed, determine whether credential rotation is required.
+
+---
+
+# PHASE 22 — DOCUMENTATION ACCURACY
+
+Update documentation ONLY after implementation is verified.
+
+Ensure:
+
+* README matches actual architecture
+* authentication description is accurate
+* RBAC description is accurate
+* AI provider is accurate
+* test counts are accurate
+* deployment instructions are accurate
+* environment variables are accurate
+* known limitations are documented
+
+Remove unsupported claims such as:
+
+```text
+enterprise-grade
+production-ready
+secure
+fully scalable
+```
+
+unless the implementation actually supports them.
+
+---
+
+# PHASE 23 — FINAL ENGINEERING REPORT
+
+Produce a report containing:
+
+## Authentication
+
+Explain exactly:
+
+* how credentials are issued
+* how credentials are validated
+* how identity is derived
+* how expiration works
+* how logout works
+* how revocation works
+
+## Authorization
+
+Explain:
+
+* Owner
+* Admin
+* Member
+* Viewer
+
+and how backend authorization is enforced.
+
+## Security Findings
+
+For every finding:
+
+```text
+ID
+Severity
+File
+Function
+Problem
+Impact
+Fix
+Regression Test
+Status
+```
+
+Severity:
+
+* P0 = critical blocker
+* P1 = serious
+* P2 = important
+* P3 = minor
+
+## Test Results
+
+Report ACTUAL numbers.
+
+Do not invent numbers.
+
+## Build Results
+
+Report:
+
+* frontend build
+* backend tests
+* frontend tests
+* E2E
+* security tests
+* Docker build
+* deployment verification
+
+## Remaining Limitations
+
+Be honest about:
+
+* SQLite scalability
+* in-memory rate limiting
+* Render limitations
+* external AI dependency
+* WebSocket deployment architecture
+* anything else discovered
+
+---
+
+# FINAL RELEASE DECISION
+
+Choose exactly ONE:
+
+```text
+NOT READY
+MVP READY
+PORTFOLIO READY
+PRODUCTION READY
+```
+
+Do NOT select `PRODUCTION READY` if:
+
+* authentication can be bypassed
+* client-controlled usernames can establish identity
+* IDOR exists
+* cross-user data access exists
+* critical WebSocket authorization is missing
+* critical AI authorization is missing
+* critical data-integrity issues remain
+* P0 security issues remain
+
+---
+
+# CRITICAL IMPLEMENTATION RULE
+
+Do not simply report problems.
+
+FIX them.
+
+Then:
+
+1. Add regression tests.
+2. Run the tests.
+3. Re-run the security audit.
+4. Verify the deployed application.
+5. Update documentation.
+6. Report what actually happened.
+
+Do not mark a checklist item `[x]` unless the implementation and verification have actually been completed.
+
+Do not add new product features.
+
+This is the final hardening and release-readiness pass.
+
+The objective is not to make the project look finished.
+
+The objective is to make it genuinely defensible as a serious full-stack engineering project.
