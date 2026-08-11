@@ -153,7 +153,7 @@ def build_pdf(pdf_path):
     story.append(Paragraph(
         "<b>Kanban Studio Pro</b> is a full-stack, enterprise-grade project management web application. "
         "It features dynamic drag-and-drop task boards, multi-project workspace isolation, granular Role-Based Access Control (RBAC), "
-        "real-time WebSocket synchronization across devices, and an embedded natural-language AI Kanban Assistant.",
+        "cryptographic session token security, real-time WebSocket synchronization across devices, and an embedded natural-language AI Kanban Assistant with OpenRouter model failover.",
         body_style
     ))
     story.append(Spacer(1, 6))
@@ -165,12 +165,13 @@ def build_pdf(pdf_path):
         [Paragraph("Frontend", body_style), Paragraph("Next.js 16 (Turbopack), React 19, TypeScript, TailwindCSS v4", body_style), Paragraph("High-performance App Router SPA with server/client components and modern glassmorphism styling.", body_style)],
         [Paragraph("Drag & Drop", body_style), Paragraph("@dnd-kit/core, @dnd-kit/sortable", body_style), Paragraph("Accessible, touch-friendly task reordering with MouseSensor, PointerSensor & TouchSensor (150ms delay).", body_style)],
         [Paragraph("Backend API", body_style), Paragraph("FastAPI, Python 3.13, Uvicorn ASGI Server", body_style), Paragraph("Asynchronous REST API endpoints, WebSocket connection manager, rate limiting, and CORS routing.", body_style)],
-        [Paragraph("Database", body_style), Paragraph("SQLite3 (WAL Mode), Python sqlite3 module", body_style), Paragraph("Relational persistence for users, projects, columns, cards, member roles, activity logs, and notifications.", body_style)],
-        [Paragraph("AI Assistant", body_style), Paragraph("Custom Rule Engine & Google Gemini API", body_style), Paragraph("Parses natural language prompts to automatically execute structured board mutations (add, move, clear tasks).", body_style)],
+        [Paragraph("Database", body_style), Paragraph("SQLite3 (WAL Mode), Python sqlite3 module", body_style), Paragraph("Relational persistence for users, sessions, projects, columns, cards, member roles, activity logs, and notifications.", body_style)],
+        [Paragraph("Security", body_style), Paragraph("Cryptographic Session Tokens, PBKDF2 Hashing, RBAC Guard", body_style), Paragraph("secrets.token_hex(32) session tokens, logout revocation, IDOR prevention, and role hierarchy enforcement.", body_style)],
+        [Paragraph("AI Assistant", body_style), Paragraph("OpenRouter API (GPT-4o-mini) + Model Failover Stack", body_style), Paragraph("Parses natural language prompts with failover (GPT-4o-mini -> Llama 3.3 70B -> Auto -> Smart Local NLP).", body_style)],
         [Paragraph("DevOps & Cloud", body_style), Paragraph("Docker, Render.com, Vercel, GitHub Actions", body_style), Paragraph("Containerized Python backend on Render + static Edge CDN frontend hosting on Vercel.", body_style)],
-        [Paragraph("Testing", body_style), Paragraph("Pytest (22), Vitest (44), Playwright E2E (14)", body_style), Paragraph("Comprehensive 80-test automated suite covering backend API, frontend UI, state logic, and browser flows.", body_style)],
+        [Paragraph("Testing", body_style), Paragraph("Pytest (38), Vitest (44), Playwright E2E (14)", body_style), Paragraph("Comprehensive 96-test automated suite covering backend API, security audit, frontend UI, and E2E browser flows.", body_style)],
     ]
-    t = Table(tech_data, colWidths=[80, 180, 244])
+    t = Table(tech_data, colWidths=[70, 190, 244])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f1f5f9")),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#cbd5e1")),
@@ -189,22 +190,20 @@ def build_pdf(pdf_path):
         ("Dockerfile (Root)", "Multi-stage Python 3.13 container definition for building and running the FastAPI backend on cloud hosts (Render/Railway). Installs system dependencies, copies requirements, and launches uvicorn on port 8000."),
         ("render.yaml (Root)", "Render Blueprint deployment configuration file. Configures automatic container builds from root Dockerfile and passes CORS_ORIGINS and PORT environment variables."),
         ("README.md (Root)", "Project documentation detailing live demo links, architecture overview, screenshot previews, and setup instructions."),
-        ("pm/backend/main.py", "FastAPI application entry point. Defines REST endpoints (/api/auth/register, /api/auth/login, /api/projects, /api/board, /api/cards, /api/ai/chat) and WebSocket route (/ws/projects/{id})."),
-        ("pm/backend/database.py", "Core SQLite database layer. Contains schema definitions, table migrations, connection management, PBKDF2 password hashing, RBAC permission checks, CRUD operations, and default board seeding."),
-        ("pm/backend/ai.py", "AI Assistant logic. Integrates Google Gemini API with fallbacks to execute structured board mutations (creating tasks, moving cards across columns, clearing completed items)."),
+        ("pm/backend/main.py", "FastAPI application entry point. Defines REST endpoints (/api/auth/register, /api/auth/login, /api/projects, /api/board, /api/cards, /api/ai/chat) and authenticated WebSocket route (/ws/projects/{id})."),
+        ("pm/backend/database.py", "Core SQLite database layer. Contains schema definitions, sessions table, PBKDF2 password hashing, RBAC permission checks (Owner, Admin, Member, Viewer, None), CRUD operations, and default board seeding."),
+        ("pm/backend/ai.py", "AI Assistant logic. Integrates OpenRouter API with model failover stack (gpt-4o-mini -> llama-3.3-70b -> auto -> smart local NLP) to execute structured board mutations."),
         ("pm/backend/websocket_manager.py", "ConnectionManager class managing real-time WebSocket client connections and broadcasting board updates to connected project members."),
-        ("pm/backend/config.py", "Environment configuration loader for reading database paths, CORS origin lists, and API keys."),
-        ("pm/backend/requirements.txt", "Backend Python dependencies list (fastapi, uvicorn, pydantic, pytest, google-generativeai)."),
-        ("pm/backend/test_main.py & test_database.py", "Pytest backend test suite (22 tests) validating authentication, DB queries, card mutations, RBAC access checks, and AI response payloads."),
+        ("pm/backend/config.py", "Environment configuration loader with override=True for reading OPENROUTER_API_KEY, database paths, CORS origin lists, and API keys."),
+        ("pm/backend/requirements.txt", "Backend Python dependencies list (fastapi, uvicorn, pydantic, pytest, python-dotenv, httpx)."),
+        ("pm/backend/test_security_audit.py & test_part28_adversarial_security.py", "Pytest security regression test suite validating session token security, token revocation on logout, IDOR prevention, RBAC role restrictions, unauthenticated WebSocket rejection, and AI prompt injection resistance."),
+        ("pm/docs/FINAL_RELEASE_CERTIFICATION.md", "Final Release Certification report confirming PRODUCTION READY status backed by 82+ automated test passes."),
         ("pm/frontend/src/app/page.tsx & layout.tsx", "Next.js App Router root layout and primary page shell rendering the main Kanban interface."),
         ("pm/frontend/src/app/globals.css", "Global TailwindCSS v4 stylesheet containing modern theme CSS variables, glassmorphism card utilities, glowing animations, and vertical mobile column layout rules."),
         ("pm/frontend/src/components/KanbanBoard.tsx", "Core frontend board orchestrator. Manages user auth state, project switcher, undo/redo history, WebSocket real-time sync, @dnd-kit sensors, and column grid."),
-        ("pm/frontend/src/components/KanbanColumn.tsx", "Droppable column container component rendering column headers, task counter badges, card lists, and quick-add task buttons."),
-        ("pm/frontend/src/components/KanbanCard.tsx", "Sortable task card component with smooth hover micro-animations, priority tags, due dates, assignees, and quick edit/delete buttons."),
         ("pm/frontend/src/components/AIAssistantWidget.tsx", "Floating AI Assistant chat drawer. Connects to /api/ai/chat via getApiUrl and automatically applies server-returned board updates."),
         ("pm/frontend/src/components/LoginForm.tsx", "Sign-in and Create Account tabbed modal featuring auto-login, error alerts, case normalization, and fallback client registration."),
-        ("pm/frontend/src/lib/api.ts", "API client module exporting getApiUrl, fetchBoard, saveBoard, registerApi, and project management network handlers."),
-        ("pm/frontend/src/lib/kanban.ts", "Kanban data structures, immutability helpers, moveCard logic, and initial default board generator."),
+        ("pm/frontend/src/lib/api.ts", "API client module exporting getApiUrl, fetchBoard, saveBoard, registerApi, and project management network handlers with Bearer token authentication."),
         ("pm/frontend/src/lib/useUndoRedo.ts", "Custom React hook providing multi-level Undo (Ctrl+Z) and Redo (Ctrl+Y) state history management."),
         ("pm/frontend/tests/kanban.spec.ts", "Playwright E2E browser test suite (14 tests) running automated user interactions across desktop and mobile viewports."),
     ]
@@ -218,12 +217,12 @@ def build_pdf(pdf_path):
     story.append(Paragraph("4. Core Site Logic & Key Functionalities", h1_style))
     
     funcs = [
-        ("Authentication & Case Normalization", "Users can sign in or register new accounts. Username strings are automatically sanitized and lower-cased to prevent case-sensitivity mismatches during authentication. Passwords are salted and hashed using PBKDF2-HMAC-SHA256."),
-        ("Multi-Project Isolation", "Users can create, rename, switch between, and delete multiple independent Kanban projects. Each project retains its own isolated columns, cards, members, and activity log."),
+        ("Authentication & Session Management", "Users sign in or register new accounts. Username strings are automatically sanitized and lower-cased. Passwords are salted and hashed using PBKDF2-HMAC-SHA256 (100,000 iterations). Active sessions issue secrets.token_hex(32) tokens, and logout revokes tokens in SQLite."),
+        ("Multi-Project Isolation & IDOR Protection", "Users create, rename, switch between, and delete independent Kanban projects. Every backend API endpoint validates project permissions before allowing access or mutation."),
         ("Drag & Drop Engine (Desktop + Mobile)", "Powered by @dnd-kit. Features PointerSensor, MouseSensor, and TouchSensor (with a 150ms delay and 5px tolerance). On mobile screens, columns stack vertically to eliminate horizontal scroll issues."),
-        ("Security & RBAC Enforcement", "Backend endpoints enforce permission checks (owner vs member vs viewer). Card mutations verify user membership before executing SQLite updates."),
-        ("Real-Time WebSockets Sync", "When multiple users collaborate on the same project, board updates (card moves, edits, deletions) are instantly broadcast via WebSockets (/ws/projects/{id})."),
-        ("AI Kanban Assistant", "Embedded chat drawer enables users to manage their board with natural language (e.g. 'Move high priority tasks to In Progress')."),
+        ("Security & RBAC Enforcement", "Backend endpoints enforce role hierarchy checks (Owner > Admin > Member > Viewer > None). Card mutations verify user membership before executing SQLite updates."),
+        ("Real-Time WebSockets Sync", "When multiple users collaborate on the same project, board updates (card moves, edits, deletions) are instantly broadcast via WebSockets (/ws/projects/{id}) with token authentication."),
+        ("AI Kanban Assistant & Model Failover", "Embedded chat drawer enables users to manage their board with natural language. Powered by OpenRouter API with multi-model failover stack (gpt-4o-mini -> llama-3.3-70b-instruct -> auto -> local NLP)."),
         ("Activity Log & Notification System", "Every project action (adding cards, editing titles, changing priority) is logged in SQLite and presented in interactive modal dialogs."),
     ]
 
@@ -233,12 +232,12 @@ def build_pdf(pdf_path):
     story.append(Spacer(1, 10))
 
     # Testing Methodology
-    story.append(Paragraph("5. Complete Testing Methodology (80 Automated Tests)", h1_style))
+    story.append(Paragraph("5. Complete Testing Methodology (96 Automated Tests)", h1_style))
     story.append(Paragraph(
-        "The application is validated by an automated test suite comprising <b>80 total tests</b> across 3 distinct test runners:",
+        "The application is validated by an automated test suite comprising <b>96 total tests</b> across 3 distinct test runners:",
         body_style
     ))
-    story.append(Paragraph("• <b>Pytest (22 Tests)</b>: Validates backend REST routes, SQLite database schemas, PBKDF2 password hashing, RBAC permission checks, and AI response structures.", bullet_style))
+    story.append(Paragraph("• <b>Pytest (38 Tests)</b>: Validates backend REST routes, SQLite database schemas, PBKDF2 password hashing, cryptographic session tokens, RBAC permission checks, IDOR isolation, AI prompt injection resistance, and Part 28 adversarial security scenarios.", bullet_style))
     story.append(Paragraph("• <b>Vitest (44 Tests)</b>: Unit tests frontend helper utilities (filterAndSortBoard, moveCard, useUndoRedo) and React UI components (LoginForm, TaskFilterToolbar, ProjectSwitcher).", bullet_style))
     story.append(Paragraph("• <b>Playwright E2E (14 Tests)</b>: Automated end-to-end browser tests in Headless Chromium. Verifies full user sign-in, task creation, dragging cards across columns, mobile viewport responsiveness, and multi-user login workflows.", bullet_style))
 
