@@ -110,6 +110,7 @@ def test_enhanced_task_management_db():
     updated = database.update_card(
         card_id="card-part11-1",
         updates={"title": "Renamed Part 11 Task", "priority": "medium", "assignee": "robin"},
+        user_id="testuser",
         db_path=TEST_DB_PATH,
     )
     assert updated["title"] == "Renamed Part 11 Task"

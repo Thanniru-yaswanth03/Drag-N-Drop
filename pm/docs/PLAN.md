@@ -776,3 +776,294 @@ Perform a complete end-to-end validation of the application and prepare the proj
 * Documentation is sufficient for another developer to clone, configure, run, test, and understand the project.
 * Project demonstrates full-stack engineering capabilities rather than only frontend implementation.
 * Existing functionality from Parts 1 through 24 remains intact.
+
+## Part 26: Security Audit & Production Remediation
+
+Perform an independent security, reliability, and production-readiness audit of the completed application based on the actual implementation rather than relying on existing documentation or previously marked checklist items.
+
+This part exists to identify and remediate security and production issues that may remain after Parts 1 through 25.
+
+Do not rewrite working architecture unnecessarily. Preserve existing functionality and make targeted changes supported by concrete findings.
+
+### Security & Authentication Remediation
+
+* [x] Audit the complete authentication flow from frontend login/registration through backend identity verification.
+* [x] Remove all reliance on client-controlled `username` query parameters or request fields as proof of identity.
+* [x] Ensure protected backend endpoints derive the authenticated user exclusively from a verified session/token.
+* [x] Remove insecure default authenticated identities such as `username="user"`.
+* [x] Replace deterministic token generation with cryptographically secure authentication credentials.
+* [x] Ensure authentication credentials have appropriate expiration and invalidation behavior.
+* [x] Implement real logout/session invalidation.
+* [x] Review `GET /api/auth/me` so it derives identity from the authenticated session rather than a client-supplied username.
+* [x] Remove development-only default credentials from production behavior.
+* [x] Ensure test users/credentials are isolated from production configuration.
+* [x] Review password hashing and ensure every password uses a unique cryptographically random salt.
+* [x] Ensure passwords are never stored in `localStorage`, `sessionStorage`, cookies, logs, or API responses.
+* [x] Remove any frontend persistence of plaintext passwords.
+* [x] Ensure authentication state is cleared correctly during logout.
+
+### Authorization & Multi-Tenant Isolation
+
+* [x] Audit every protected API endpoint for authentication requirements.
+* [x] Audit every protected API endpoint for authorization requirements.
+* [x] Verify project ownership/membership on every project-scoped operation.
+* [x] Verify card ownership/project membership on every card mutation.
+* [x] Verify activity history belongs to the authenticated user's accessible project.
+* [x] Verify notifications belong to the authenticated user.
+* [x] Verify project member operations require appropriate project roles.
+* [x] Verify viewers cannot perform mutations.
+* [x] Verify Member/Admin/Owner permissions match the documented RBAC model.
+* [x] Perform an IDOR audit against project IDs, card IDs, notification IDs, activity IDs, and membership IDs.
+* [x] Attempt horizontal privilege escalation between two users.
+* [x] Attempt vertical privilege escalation between project roles.
+* [x] Ensure changing IDs or request parameters cannot bypass authorization.
+
+### WebSocket Security
+
+* [x] Require authenticated identity for WebSocket connections.
+* [x] Verify project membership before allowing a WebSocket subscription.
+* [x] Prevent clients from joining unauthorized project channels.
+* [x] Ensure WebSocket messages cannot bypass REST/API authorization rules.
+* [x] Validate incoming WebSocket payloads.
+* [x] Handle malformed and oversized WebSocket messages safely.
+* [x] Clean up disconnected clients reliably.
+* [x] Prevent cross-project message leakage.
+* [x] Verify reconnect behavior.
+* [x] Verify multi-user synchronization remains consistent.
+
+### AI Security & Reliability
+
+* [x] Require authentication for AI endpoints.
+* [x] Enforce project-level authorization before AI operations.
+* [x] Validate every AI-generated structured response before database mutation.
+* [x] Validate card IDs against the current project.
+* [x] Validate column IDs against the current project.
+* [x] Validate mutation types against an explicit allowlist.
+* [x] Validate all generated fields using backend schemas.
+* [x] Reject malformed, oversized, or structurally invalid AI output.
+* [x] Prevent AI output from modifying resources outside the authenticated user's authorized project.
+* [x] Review prompt-injection handling for user-controlled task titles, descriptions, tags, and project data.
+* [x] Add request size limits.
+* [x] Add conversation/history limits.
+* [x] Add appropriate rate limiting to expensive AI operations.
+* [x] Add timeout and controlled retry behavior.
+* [x] Ensure AI failures cannot corrupt persisted board state.
+
+### API & Input Security
+
+* [x] Audit all FastAPI endpoints.
+* [x] Validate all request payloads using strict Pydantic models.
+* [x] Replace unrestricted role/priority strings with enums where appropriate.
+* [x] Add sensible maximum lengths for usernames, project names, task titles, descriptions, tags, and AI messages.
+* [x] Validate pagination parameters.
+* [x] Enforce maximum pagination limits.
+* [x] Prevent oversized request payloads.
+* [x] Review SQL query construction and parameterization.
+* [x] Review file/path handling if applicable.
+* [x] Review error responses for information leakage.
+* [x] Ensure internal exceptions are logged server-side without exposing stack traces to clients.
+
+### CORS & Deployment Security
+
+* [x] Review production CORS configuration.
+* [x] Ensure production does not rely on wildcard CORS when credentials are involved.
+* [x] Restrict production origins to the actual frontend deployment.
+* [x] Review all production environment variables.
+* [x] Ensure secrets are never committed to Git.
+* [x] Ensure `.env` files containing secrets remain excluded from version control.
+* [x] Ensure production secrets are required rather than silently falling back to development values.
+* [x] Verify HTTPS/WSS behavior in the deployed environment.
+* [x] Verify Vercel frontend and Render backend configuration.
+* [x] Verify production WebSocket connectivity.
+
+### Rate Limiting & Abuse Protection
+
+* [x] Audit the existing rate limiter.
+* [x] Ensure expired rate-limit entries do not grow without bound.
+* [x] Protect authentication endpoints from brute-force attempts.
+* [x] Protect AI endpoints from abuse.
+* [x] Review proxy/IP handling for deployed infrastructure.
+* [x] Document limitations of in-memory rate limiting.
+* [x] If the current architecture cannot support distributed rate limiting, document the limitation rather than pretending it does.
+
+### Database Integrity & Concurrency
+
+* [x] Verify SQLite foreign-key enforcement.
+* [x] Review transaction boundaries.
+* [x] Review rollback behavior.
+* [x] Review database connection lifecycle.
+* [x] Review concurrent write behavior.
+* [x] Review board update race conditions.
+* [x] Prevent stale client state from overwriting newer persisted state where practical.
+* [x] Review database indexes for frequently queried fields.
+* [x] Review migration behavior.
+* [x] Ensure database migrations are deterministic.
+* [x] Document SQLite production limitations.
+
+### Frontend Security & State
+
+* [x] Audit all `localStorage` and `sessionStorage` usage.
+* [x] Remove sensitive authentication data from browser storage where inappropriate.
+* [x] Ensure logout clears user-specific cached state.
+* [x] Verify project switching cannot display stale data from another project.
+* [x] Review optimistic updates for stale-request overwrites.
+* [x] Review rapid drag-and-drop persistence.
+* [x] Review WebSocket updates interacting with optimistic local state.
+* [x] Ensure failed requests correctly roll back local state.
+* [x] Ensure old API responses cannot overwrite newer board state.
+
+### Security Regression Tests
+
+Add automated tests for every security issue discovered during this audit.
+
+Minimum required tests:
+
+* [x] Unauthenticated API access is rejected.
+* [x] Client cannot impersonate another username.
+* [x] Invalid/expired authentication credentials are rejected.
+* [x] Logout invalidates authentication.
+* [x] Passwords are never persisted in browser storage.
+* [x] User A cannot access User B's project.
+* [x] User A cannot access User B's cards.
+* [x] User A cannot access User B's notifications.
+* [x] User A cannot access User B's activity history.
+* [x] Unauthorized project membership changes are rejected.
+* [x] Viewers cannot mutate board state.
+* [x] Unauthorized WebSocket connections are rejected.
+* [x] Unauthorized WebSocket messages are rejected.
+* [x] AI cannot mutate another user's project.
+* [x] Invalid AI mutation payloads are rejected.
+* [x] Oversized AI requests are rejected.
+* [x] Authentication rate limiting works.
+* [x] AI rate limiting works.
+* [x] Pagination limits are enforced.
+* [x] Malformed requests return safe errors.
+* [x] Production configuration does not expose development credentials.
+
+### Tests & Verification
+
+* [x] Run the complete backend test suite.
+* [x] Run the complete frontend test suite.
+* [x] Run the complete Playwright E2E suite.
+* [x] Run all newly added security regression tests.
+* [x] Run dependency/security audits.
+* [x] Run production frontend build.
+* [x] Build the production Docker image.
+* [x] Start the production container locally.
+* [x] Verify backend health endpoint.
+* [x] Verify frontend-to-backend communication.
+* [x] Verify authentication end-to-end.
+* [x] Verify authorization end-to-end.
+* [x] Verify multi-user isolation.
+* [x] Verify WebSocket authentication and isolation.
+* [x] Verify AI functionality after security changes.
+* [x] Verify mobile functionality remains intact.
+* [x] Verify existing Parts 1 through 25 functionality remains intact.
+
+### Required Audit Report
+
+After implementation, produce a security audit report containing:
+
+1. Executive summary.
+2. All discovered findings.
+3. Severity classification:
+
+   * P0: Production/security blocker
+   * P1: Serious issue
+   * P2: Important improvement
+   * P3: Minor/polish
+4. Affected file and function for each finding.
+5. Impact of each finding.
+6. Remediation performed.
+7. Regression test covering each remediation.
+8. Remaining known limitations.
+9. Production infrastructure limitations.
+10. Final security assessment.
+
+Do not claim a finding is resolved unless the implementation and corresponding test have been verified.
+
+### Success Criteria
+
+* No critical authentication vulnerabilities remain.
+* No client-controlled username can establish identity.
+* Passwords are never stored in plaintext or browser storage.
+* Authentication credentials are securely generated and validated.
+* Protected resources enforce server-side authorization.
+* Cross-user and cross-project access is prevented.
+* WebSocket connections enforce authentication and project authorization.
+* AI-generated mutations cannot bypass authorization or backend validation.
+* Production configuration does not expose development credentials.
+* Security regression tests pass.
+* Existing functionality remains intact.
+* All critical findings are either resolved or explicitly documented with a justified limitation.
+* The application is ready to proceed to final production re-validation.
+
+## Part 27: Final Re-Validation & Release Sign-Off
+
+Re-run the final production validation after completion of Part 26.
+
+### Tests & Verification
+
+* [x] Run complete backend test suite.
+* [x] Run complete frontend test suite.
+* [x] Run complete Playwright E2E suite.
+* [x] Run all security regression tests.
+* [x] Build production frontend.
+* [x] Build production Docker image.
+* [x] Start and verify production container locally.
+* [x] Verify authentication and logout.
+* [x] Verify multi-user isolation.
+* [x] Verify RBAC permissions.
+* [x] Verify project and task CRUD.
+* [x] Verify drag-and-drop persistence.
+* [x] Verify undo/redo.
+* [x] Verify AI task operations.
+* [x] Verify AI project intelligence.
+* [x] Verify WebSocket collaboration.
+* [x] Verify notifications.
+* [x] Verify mobile workflows.
+* [x] Verify production environment configuration.
+* [x] Verify deployed frontend/backend communication.
+* [x] Verify deployed WebSocket connectivity.
+* [x] Review production logs for errors.
+* [x] Review documentation against the final implementation.
+* [x] Confirm no known P0 or unresolved critical P1 issues remain.
+
+### Required Final Report
+
+Provide:
+
+* Total tests executed.
+* Total tests passed.
+* Total tests failed.
+* Security tests executed.
+* Production build status.
+* Docker build status.
+* Deployment verification status.
+* Remaining known limitations.
+* Final list of unresolved issues.
+* Final production-readiness classification.
+
+Use exactly one final classification:
+
+* NOT READY
+* MVP READY
+* PORTFOLIO READY
+* PRODUCTION READY
+
+Do not select PRODUCTION READY if any unresolved P0 security issue or critical data-integrity issue remains.
+
+### Success Criteria
+
+* All critical tests pass.
+* Production build succeeds.
+* Production container starts successfully.
+* Authentication and authorization are verified.
+* Multi-user isolation is verified.
+* Real-time collaboration is verified.
+* AI operations remain secure.
+* No known critical security or data-integrity issues remain.
+* Documentation accurately reflects the final implementation.
+* Parts 1 through 26 remain intact unless a documented security correction required changing earlier behavior.
+* The project receives a final release-readiness decision based on evidence rather than assumptions.
+

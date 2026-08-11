@@ -112,11 +112,11 @@ def test_user_project_isolation():
         f"/api/projects/{proj_a_id}?username=userb",
         json={"name": "Hacked Name"}
     )
-    assert rename_b.status_code == 404
+    assert rename_b.status_code in (403, 404)
 
     # User B attempts to delete User A's project
     del_b = client.delete(f"/api/projects/{proj_a_id}?username=userb")
-    assert del_b.status_code == 404
+    assert del_b.status_code in (403, 404)
 
 
 def test_activity_history_api():
@@ -137,11 +137,11 @@ def test_activity_history_api():
     card_id = add_res.json()["card"]["id"]
 
     # 3. Update card
-    up_res = client.put(f"/api/cards/{card_id}", json={"priority": "high"})
+    up_res = client.put(f"/api/cards/{card_id}?username=testuser", json={"priority": "high"})
     assert up_res.status_code == 200
 
     # 4. Delete card
-    del_res = client.delete(f"/api/cards/{card_id}")
+    del_res = client.delete(f"/api/cards/{card_id}?username=testuser")
     assert del_res.status_code == 200
 
     # 5. Fetch Activity Log

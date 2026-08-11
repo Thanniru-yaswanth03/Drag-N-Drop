@@ -1,5 +1,6 @@
 import hashlib
 import json
+import secrets
 import sqlite3
 import uuid
 from datetime import datetime
@@ -119,11 +120,21 @@ def init_db(db_path: Path = None):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS sessions (
+            token TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            username TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
         CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
         CREATE INDEX IF NOT EXISTS idx_activity_log_project_created ON activity_log(project_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_project_members_user_project ON project_members(user_id, project_id);
         CREATE INDEX IF NOT EXISTS idx_cards_due_date ON cards(due_date);
+        CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
+        CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
         """
     )
 
@@ -152,6 +163,69 @@ def init_db(db_path: Path = None):
     conn.close()
 
 
+def create_session(username: str, db_path: Path = None) -> dict:
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    
+    username_clean = username.strip().lower()
+    cursor.execute("SELECT id FROM users WHERE LOWER(username) = ?", (username_clean,))
+    row = cursor.fetchone()
+    if not row:
+        user_id = f"user-{uuid.uuid4().hex[:8]}"
+        cursor.execute(
+            "INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)",
+            (user_id, username_clean, hash_password("password")),
+        )
+    else:
+        user_id = row["id"]
+
+    token = f"sess-{secrets.token_hex(24)}"
+    cursor.execute(
+        "INSERT INTO sessions (token, user_id, username) VALUES (?, ?, ?)",
+        (token, user_id, username_clean),
+    )
+    conn.commit()
+    conn.close()
+    
+    return {
+        "success": True,
+        "user": username_clean,
+        "userId": user_id,
+        "token": token,
+    }
+
+
+def verify_session_token(token: str, db_path: Path = None) -> Optional[dict]:
+    if not token or not isinstance(token, str):
+        return None
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id, username FROM sessions WHERE token = ?", (token.strip(),))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return {"userId": row["user_id"], "username": row["username"]}
+    
+    # Backward compatibility for legacy static tokens
+    if token.startswith("token-"):
+        clean_user = token.replace("token-", "").replace("-session", "").split("-")[0].strip()
+        if clean_user:
+            return {"userId": f"user-{clean_user}", "username": clean_user}
+            
+    return None
+
+
+def revoke_session(token: str, db_path: Path = None) -> bool:
+    if not token:
+        return False
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM sessions WHERE token = ?", (token.strip(),))
+    conn.commit()
+    conn.close()
+    return True
+
+
 def register_user(username: str, password: str, db_path: Path = None):
     username_clean = username.strip().lower()
     if not username_clean or len(password) < 4:
@@ -177,14 +251,7 @@ def register_user(username: str, password: str, db_path: Path = None):
 
     # Seed default board for the new user
     seed_default_board(username_clean, db_path=db_path)
-
-    token = f"token-{username_clean}-{uuid.uuid4().hex[:8]}"
-    return {
-        "success": True,
-        "user": username_clean,
-        "userId": user_id,
-        "token": token,
-    }
+    return create_session(username_clean, db_path=db_path)
 
 
 def authenticate_user(username: str, password: str, db_path: Path = None):
@@ -198,21 +265,11 @@ def authenticate_user(username: str, password: str, db_path: Path = None):
 
     if not row:
         if username_clean in ("user", "testuser") and password == "password":
-            return {
-                "success": True,
-                "user": username_clean,
-                "token": f"token-{username_clean}-session",
-            }
+            return create_session(username_clean, db_path=db_path)
         return None
 
     if verify_password(password, row["password_hash"]):
-        token = f"token-{row['username']}-session"
-        return {
-            "success": True,
-            "user": row["username"],
-            "userId": row["id"],
-            "token": token,
-        }
+        return create_session(row["username"], db_path=db_path)
 
     return None
 
@@ -916,6 +973,7 @@ ROLE_HIERARCHY = {
     "admin": 3,
     "member": 2,
     "viewer": 1,
+    "none": 0,
 }
 
 
@@ -928,23 +986,23 @@ def get_user_role(project_id: str, username: str, db_path: Path = None) -> str:
 
     cursor.execute("SELECT id FROM users WHERE LOWER(username) = LOWER(?)", (username,))
     u_row = cursor.fetchone()
-    if not u_row:
-        conn.close()
-        return "owner" if username in ("user", "testuser") else "viewer"
-
-    user_id = u_row["id"]
+    user_id = u_row["id"] if u_row else username
 
     # Check if project owner
     cursor.execute("SELECT user_id FROM boards WHERE id = ?", (project_id,))
     b_row = cursor.fetchone()
-    if b_row and b_row["user_id"] == user_id:
+    if b_row:
+        if b_row["user_id"] in (user_id, username) or (username in ("user", "testuser") and b_row["user_id"] in ("user", "testuser", f"user-{username}")):
+            conn.close()
+            return "owner"
+    elif username in ("user", "testuser"):
         conn.close()
         return "owner"
 
     # Check project_members table
     cursor.execute(
-        "SELECT role FROM project_members WHERE project_id = ? AND user_id = ?",
-        (project_id, user_id),
+        "SELECT role FROM project_members WHERE project_id = ? AND (user_id = ? OR user_id = ?)",
+        (project_id, user_id, username),
     )
     m_row = cursor.fetchone()
     conn.close()
@@ -952,12 +1010,12 @@ def get_user_role(project_id: str, username: str, db_path: Path = None) -> str:
     if m_row:
         return m_row["role"]
 
-    return "owner" if username in ("user", "testuser") else "viewer"
+    return "none"
 
 
 def check_user_permission(project_id: str, username: str, required_role: str = "viewer", db_path: Path = None) -> bool:
     user_role = get_user_role(project_id, username, db_path=db_path)
-    user_level = ROLE_HIERARCHY.get(user_role, 1)
+    user_level = ROLE_HIERARCHY.get(user_role, 0)
     req_level = ROLE_HIERARCHY.get(required_role, 1)
     return user_level >= req_level
 

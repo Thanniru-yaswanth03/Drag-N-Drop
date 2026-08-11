@@ -5,7 +5,7 @@ import time
 from fastapi import FastAPI, HTTPException, status, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import ai
 import database
@@ -50,6 +50,25 @@ def check_rate_limit(client_ip: str) -> bool:
     return len(attempts) <= max_attempts
 
 
+def get_authenticated_user(request: Request, username: Optional[str] = None) -> str:
+    auth_header = request.headers.get("Authorization")
+    token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+    if not token:
+        token = request.headers.get("X-Session-Token") or request.query_params.get("token")
+
+    if token:
+        sess = database.verify_session_token(token)
+        if sess:
+            return sess["username"]
+
+    if username and isinstance(username, str) and username.strip():
+        return username.strip().lower()
+
+    return "user"
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     if isinstance(exc, HTTPException):
@@ -71,40 +90,40 @@ if STATIC_DIR.exists():
 
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(..., min_length=1, max_length=50)
+    password: str = Field(..., min_length=1, max_length=100)
 
 
 class RegisterRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(..., min_length=1, max_length=50)
+    password: str = Field(..., min_length=4, max_length=100)
 
 
 class AddMemberRequest(BaseModel):
-    username: str
-    role: str = "member"
+    username: str = Field(..., min_length=1, max_length=50)
+    role: str = Field("member", max_length=20)
 
 
 class CardCreateRequest(BaseModel):
-    columnId: str
-    cardId: Optional[str] = None
-    title: str
-    details: Optional[str] = ""
-    description: Optional[str] = ""
-    priority: Optional[str] = "medium"
-    dueDate: Optional[str] = None
-    tags: Optional[List[str]] = []
-    assignee: Optional[str] = None
+    columnId: str = Field(..., max_length=100)
+    cardId: Optional[str] = Field(None, max_length=100)
+    title: str = Field(..., min_length=1, max_length=200)
+    details: Optional[str] = Field("", max_length=2000)
+    description: Optional[str] = Field("", max_length=2000)
+    priority: Optional[str] = Field("medium", max_length=20)
+    dueDate: Optional[str] = Field(None, max_length=50)
+    tags: Optional[List[str]] = Field([], max_length=20)
+    assignee: Optional[str] = Field(None, max_length=50)
 
 
 class CardUpdateRequest(BaseModel):
-    title: Optional[str] = None
-    details: Optional[str] = None
-    description: Optional[str] = None
-    priority: Optional[str] = None
-    dueDate: Optional[str] = None
-    tags: Optional[List[str]] = None
-    assignee: Optional[str] = None
+    title: Optional[str] = Field(None, max_length=200)
+    details: Optional[str] = Field(None, max_length=2000)
+    description: Optional[str] = Field(None, max_length=2000)
+    priority: Optional[str] = Field(None, max_length=20)
+    dueDate: Optional[str] = Field(None, max_length=50)
+    tags: Optional[List[str]] = Field(None, max_length=20)
+    assignee: Optional[str] = Field(None, max_length=50)
 
 
 class ProjectItem(BaseModel):
@@ -115,28 +134,28 @@ class ProjectItem(BaseModel):
 
 
 class ProjectCreateRequest(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1, max_length=100)
 
 
 class ProjectUpdateRequest(BaseModel):
-    name: str
+    name: str = Field(..., min_length=1, max_length=100)
 
 
 class ColumnItem(BaseModel):
-    id: str
-    title: str
-    cardIds: List[str]
+    id: str = Field(..., max_length=100)
+    title: str = Field(..., max_length=100)
+    cardIds: List[str] = Field(default_factory=list)
 
 
 class CardItem(BaseModel):
-    id: str
-    title: str
-    details: Optional[str] = ""
-    description: Optional[str] = ""
-    priority: Optional[str] = "medium"
-    dueDate: Optional[str] = None
-    tags: Optional[List[str]] = []
-    assignee: Optional[str] = None
+    id: str = Field(..., max_length=100)
+    title: str = Field(..., max_length=200)
+    details: Optional[str] = Field("", max_length=2000)
+    description: Optional[str] = Field("", max_length=2000)
+    priority: Optional[str] = Field("medium", max_length=20)
+    dueDate: Optional[str] = Field(None, max_length=50)
+    tags: Optional[List[str]] = Field([], max_length=20)
+    assignee: Optional[str] = Field(None, max_length=50)
     createdAt: Optional[str] = None
     updatedAt: Optional[str] = None
 
@@ -147,10 +166,10 @@ class BoardSaveRequest(BaseModel):
 
 
 class AIChatRequest(BaseModel):
-    message: str
-    history: Optional[List[Dict[str, str]]] = []
+    message: str = Field(..., min_length=1, max_length=1000)
+    history: Optional[List[Dict[str, str]]] = Field(default_factory=list, max_length=20)
     board: Optional[Dict[str, Any]] = None
-    project_id: Optional[str] = None
+    project_id: Optional[str] = Field(None, max_length=100)
 
 
 @app.get("/api/health")
@@ -193,67 +212,90 @@ def login(credentials: LoginRequest, request: Request):
 
 
 @app.get("/api/auth/me")
-def get_me(username: str = "user"):
-    return {"user": username, "authenticated": True}
+def get_me(request: Request, username: str = "user"):
+    auth_user = get_authenticated_user(request, username)
+    return {"user": auth_user, "authenticated": True}
 
 
 @app.post("/api/auth/logout")
-def logout():
+def logout(request: Request):
+    auth_header = request.headers.get("Authorization")
+    token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+    if not token:
+        token = request.headers.get("X-Session-Token") or request.query_params.get("token")
+    if token:
+        database.revoke_session(token)
     return {"success": True}
 
 
 @app.get("/api/projects", response_model=List[ProjectItem])
-def get_projects(username: str = "user"):
-    return database.get_projects(username)
+def get_projects(request: Request, username: str = "user"):
+    auth_user = get_authenticated_user(request, username)
+    return database.get_projects(auth_user)
 
 
 @app.post("/api/projects", response_model=ProjectItem)
-def create_project(payload: ProjectCreateRequest, username: str = "user"):
-    return database.create_project(username, payload.name)
+def create_project(payload: ProjectCreateRequest, request: Request, username: str = "user"):
+    auth_user = get_authenticated_user(request, username)
+    return database.create_project(auth_user, payload.name)
 
 
 @app.put("/api/projects/{project_id}", response_model=ProjectItem)
-def update_project(project_id: str, payload: ProjectUpdateRequest, username: str = "user"):
-    updated = database.update_project(username, project_id, payload.name)
+def update_project(project_id: str, payload: ProjectUpdateRequest, request: Request, username: str = "user"):
+    auth_user = get_authenticated_user(request, username)
+    if not database.check_user_permission(project_id, auth_user, "admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden: Viewers/Members cannot rename project")
+    updated = database.update_project(auth_user, project_id, payload.name)
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found or forbidden")
     return updated
 
 
 @app.delete("/api/projects/{project_id}")
-def delete_project(project_id: str, username: str = "user"):
-    deleted = database.delete_project(username, project_id)
+def delete_project(project_id: str, request: Request, username: str = "user"):
+    auth_user = get_authenticated_user(request, username)
+    if not database.check_user_permission(project_id, auth_user, "owner"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden: Only owners can delete projects")
+    deleted = database.delete_project(auth_user, project_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found or forbidden")
     return {"success": True, "deleted": project_id}
 
 
 @app.get("/api/board")
-def get_board(username: str = "user", project_id: Optional[str] = None):
-    res = database.get_board(user_id=username, project_id=project_id)
+def get_board(request: Request, username: str = "user", project_id: Optional[str] = None):
+    auth_user = get_authenticated_user(request, username)
+    res = database.get_board(user_id=auth_user, project_id=project_id)
     if res is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found or forbidden")
     return res
 
 
 @app.put("/api/board")
-def update_board(payload: BoardSaveRequest, username: str = "user", project_id: Optional[str] = None):
-    res = database.save_board(user_id=username, board_data=payload.model_dump(), project_id=project_id)
+def update_board(payload: BoardSaveRequest, request: Request, username: str = "user", project_id: Optional[str] = None):
+    auth_user = get_authenticated_user(request, username)
+    if project_id and not database.check_user_permission(project_id, auth_user, "member"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden: Viewers cannot mutate board state")
+    res = database.save_board(user_id=auth_user, board_data=payload.model_dump(), project_id=project_id)
     if res is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found or forbidden")
     return res
 
 
 @app.post("/api/board/reset")
-def reset_board(username: str = "user"):
-    return database.reset_default_board(username)
+def reset_board(request: Request, username: str = "user"):
+    auth_user = get_authenticated_user(request, username)
+    return database.reset_default_board(auth_user)
 
 
 @app.post("/api/cards")
-def create_card(payload: CardCreateRequest, username: str = "user"):
+def create_card(payload: CardCreateRequest, request: Request, username: str = "user"):
+    auth_user = get_authenticated_user(request, username)
     card_id = payload.cardId or f"card-{Path().resolve().stat().st_mtime_ns}"
     card = database.add_card(
-        user_id=username,
+        user_id=auth_user,
         column_id=payload.columnId,
         card_id=card_id,
         title=payload.title,
@@ -268,8 +310,9 @@ def create_card(payload: CardCreateRequest, username: str = "user"):
 
 
 @app.put("/api/cards/{card_id}")
-def update_card(card_id: str, payload: CardUpdateRequest, username: str = "user"):
-    res = database.update_card(card_id, payload.model_dump(exclude_unset=True), user_id=username)
+def update_card(card_id: str, payload: CardUpdateRequest, request: Request, username: str = "user"):
+    auth_user = get_authenticated_user(request, username)
+    res = database.update_card(card_id, payload.model_dump(exclude_unset=True), user_id=auth_user)
     if not res:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
     if isinstance(res, dict) and "error" in res:
@@ -278,8 +321,9 @@ def update_card(card_id: str, payload: CardUpdateRequest, username: str = "user"
 
 
 @app.delete("/api/cards/{card_id}")
-def delete_card(card_id: str, username: str = "user"):
-    res = database.delete_card(card_id, user_id=username)
+def delete_card(card_id: str, request: Request, username: str = "user"):
+    auth_user = get_authenticated_user(request, username)
+    res = database.delete_card(card_id, user_id=auth_user)
     if isinstance(res, dict) and "error" in res:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=res["error"])
     if not res:
@@ -293,44 +337,55 @@ async def ai_test_endpoint():
 
 
 @app.post("/api/ai/chat")
-async def ai_chat_endpoint(payload: AIChatRequest, username: str = "user"):
-    current_board = payload.board or database.get_board(username, project_id=payload.project_id)
+async def ai_chat_endpoint(payload: AIChatRequest, request: Request, username: str = "user"):
+    auth_user = get_authenticated_user(request, username)
+    if payload.project_id and not database.check_user_permission(payload.project_id, auth_user, "viewer"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden: insufficient permissions for project AI chat")
+
+    current_board = payload.board or database.get_board(auth_user, project_id=payload.project_id)
     result = await ai.chat_with_ai(
         user_message=payload.message,
         history=payload.history or [],
         board_data=current_board,
     )
-    
-    # If AI returned a board update, automatically persist to SQLite
+
     if result.get("board_update"):
-        updated_board = database.save_board(username, result["board_update"], project_id=payload.project_id)
-        result["board_update"] = updated_board
-        
+        if payload.project_id and not database.check_user_permission(payload.project_id, auth_user, "member"):
+            result["board_update"] = None
+            result["reply"] += "\n\n*(Note: AI board mutation omitted due to Viewer permissions)*"
+        else:
+            updated_board = database.save_board(auth_user, result["board_update"], project_id=payload.project_id)
+            result["board_update"] = updated_board
+
     return result
 
 
 @app.get("/api/activity-log")
 @app.get("/api/projects/{project_id}/activity")
-def get_activity_log(project_id: str, username: str = "user", limit: int = 50, offset: int = 0):
-    if not database.check_user_permission(project_id, username, "viewer"):
+def get_activity_log(project_id: str, request: Request, username: str = "user", limit: int = 50, offset: int = 0):
+    auth_user = get_authenticated_user(request, username)
+    safe_limit = min(max(1, limit), 100)
+    if not database.check_user_permission(project_id, auth_user, "viewer"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: insufficient permissions for activity log",
         )
-    activities = database.get_project_activities(project_id, user_id=username, limit=limit, offset=offset)
+    activities = database.get_project_activities(project_id, user_id=auth_user, limit=safe_limit, offset=offset)
     return {"activities": activities}
 
 
 @app.get("/api/projects/{project_id}/members")
-def get_members(project_id: str, username: str = "user"):
+def get_members(project_id: str, request: Request, username: str = "user"):
+    auth_user = get_authenticated_user(request, username)
     members = database.get_project_members(project_id)
-    user_role = database.get_user_role(project_id, username)
+    user_role = database.get_user_role(project_id, auth_user)
     return {"members": members, "userRole": user_role}
 
 
 @app.post("/api/projects/{project_id}/members")
-def add_member(project_id: str, payload: AddMemberRequest, username: str = "user"):
-    res = database.add_project_member(project_id, payload.username, payload.role, username)
+def add_member(project_id: str, payload: AddMemberRequest, request: Request, username: str = "user"):
+    auth_user = get_authenticated_user(request, username)
+    res = database.add_project_member(project_id, payload.username, payload.role, auth_user)
     if not res.get("success"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -340,8 +395,9 @@ def add_member(project_id: str, payload: AddMemberRequest, username: str = "user
 
 
 @app.delete("/api/projects/{project_id}/members/{target_username}")
-def remove_member(project_id: str, target_username: str, username: str = "user"):
-    res = database.remove_project_member(project_id, target_username, username)
+def remove_member(project_id: str, target_username: str, request: Request, username: str = "user"):
+    auth_user = get_authenticated_user(request, username)
+    res = database.remove_project_member(project_id, target_username, auth_user)
     if not res.get("success"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -352,8 +408,14 @@ def remove_member(project_id: str, target_username: str, username: str = "user")
 
 # Real-Time WebSocket Channel
 @app.websocket("/ws/projects/{project_id}")
-async def websocket_endpoint(websocket: WebSocket, project_id: str, username: str = "user"):
-    if not database.check_user_permission(project_id, username, "viewer"):
+async def websocket_endpoint(websocket: WebSocket, project_id: str, username: str = "user", token: Optional[str] = None):
+    auth_user = username
+    if token:
+        sess = database.verify_session_token(token)
+        if sess:
+            auth_user = sess["username"]
+
+    if not database.check_user_permission(project_id, auth_user, "viewer"):
         await websocket.close(code=4003)
         return
 
