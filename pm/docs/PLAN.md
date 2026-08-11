@@ -1484,30 +1484,587 @@ If a limitation exists because of infrastructure choices such as SQLite, Render,
 The goal of Part 28 is not to add features.
 
 The goal is to prove that the existing application is actually secure, reliable, and ready for release rather than merely appearing ready based on completed checkboxes.
+## Part 29: Engineering Quality, Observability & Release Readiness
+
+Perform the final engineering-quality pass on the completed application after all feature development, security remediation, and independent security verification have been completed.
+
+The objective is to ensure the project is maintainable, observable, reproducible, testable, documented, and professionally presentable.
+
+Do not add unnecessary product features.
+
+Do not rewrite working architecture without a concrete engineering reason.
+
+Treat the current implementation as the source of truth.
 
 ---
 
-## Part 29: Final Production Deployment, System Verification & Master Documentation Sync
+### Code Quality Audit
 
-Perform the final production deployment verification, validate 100% automated test suite execution (38 Pytest + 44 Vitest = 82 total tests), sync master project documentation (PDF & Markdown), update repository README references, and complete the final GitHub push for full release readiness.
+* [ ] Review all backend modules for duplicated logic.
+* [ ] Review all frontend components for duplicated logic.
+* [ ] Identify oversized modules/components that should reasonably be split.
+* [ ] Remove dead code.
+* [ ] Remove unused imports.
+* [ ] Remove unused dependencies where safe.
+* [ ] Remove obsolete compatibility code.
+* [ ] Remove debug `print()` statements and temporary logging.
+* [ ] Remove commented-out abandoned implementations.
+* [ ] Review function and variable naming.
+* [ ] Review TypeScript typing quality.
+* [ ] Review Python typing quality.
+* [ ] Replace unnecessary `Any` usage where practical.
+* [ ] Review error handling consistency.
+* [ ] Review API response consistency.
+* [ ] Review frontend API abstraction consistency.
+* [ ] Review backend service/database separation.
+* [ ] Preserve simple architecture where additional abstraction provides no real benefit.
 
-- [x] Execute backend Pytest suite (`python -m pytest pm/backend` - 38 passed, 0 failed).
-- [x] Execute frontend Vitest suite (`npm test -- --run` in `pm/frontend` - 44 passed, 0 failed).
-- [x] Update `documentation/generate_docs.py` to reflect Part 29 release readiness and 82 total automated test results.
-- [x] Execute `python documentation/generate_docs.py` to regenerate master documentation PDF (`Kanban_Studio_Pro_Master_Documentation.pdf`) and Markdown (`Kanban_Studio_Pro_Master_Documentation.md`).
-- [x] Update `README.md` and `pm/README.md` with Part 29 release completion status, test metrics, and release certification links.
-- [x] Stage all modified files, commit release changes, and push to GitHub repository (`origin main`).
+---
 
-### Tests & Verification
-- Backend Pytest execution: `python -m pytest pm/backend` (38 passing tests).
-- Frontend Vitest execution: `npm test -- --run` in `pm/frontend` (44 passing tests).
-- PDF Documentation generation: `python documentation/generate_docs.py`.
-- Git status & push verification: `git status` clean working tree after push.
+### Type Safety & Validation
+
+* [ ] Run TypeScript type checking.
+* [ ] Run Python type checking if configured.
+* [ ] Fix type errors that represent real correctness issues.
+* [ ] Review nullable values.
+* [ ] Review optional fields.
+* [ ] Review enum usage.
+* [ ] Review API request/response models.
+* [ ] Ensure frontend types accurately represent backend responses.
+* [ ] Ensure backend validation matches frontend assumptions.
+* [ ] Ensure invalid data cannot silently propagate between layers.
+
+---
+
+### Linting & Formatting
+
+* [ ] Run frontend linting.
+* [ ] Run backend linting if configured.
+* [ ] Run formatting checks.
+* [ ] Fix meaningful lint violations.
+* [ ] Avoid disabling lint rules merely to make the build pass.
+* [ ] Avoid broad `eslint-disable` or equivalent suppressions without justification.
+* [ ] Ensure formatting is consistent across the project.
+
+---
+
+### Test Suite Quality
+
+Do not optimize for test count alone.
+
+Evaluate whether the tests actually protect important behavior.
+
+* [ ] Run all backend tests.
+* [ ] Run all frontend unit tests.
+* [ ] Run all Playwright E2E tests.
+* [ ] Run all security regression tests.
+* [ ] Run all WebSocket tests.
+* [ ] Run all AI tests.
+* [ ] Run database tests.
+* [ ] Verify multi-user authorization tests.
+* [ ] Verify mobile E2E tests.
+* [ ] Verify regression tests for previously discovered vulnerabilities.
+* [ ] Identify flaky tests.
+* [ ] Fix flaky tests rather than simply retrying them.
+* [ ] Remove meaningless tests that only increase test count.
+* [ ] Add missing tests for critical business logic.
+* [ ] Verify test isolation and cleanup.
+* [ ] Verify tests do not depend on production services or credentials.
+
+---
+
+### Test Coverage Review
+
+Measure actual coverage where tooling is available.
+
+Review coverage for:
+
+* [ ] Authentication.
+* [ ] Authorization.
+* [ ] Database mutations.
+* [ ] Project operations.
+* [ ] Card operations.
+* [ ] WebSocket handling.
+* [ ] AI structured output handling.
+* [ ] Notifications.
+* [ ] Undo/redo.
+* [ ] Search/filter/sort logic.
+* [ ] Critical frontend state transitions.
+
+Do not chase an arbitrary 100% coverage number.
+
+Prioritize meaningful coverage of security-critical and business-critical code.
+
+Document important areas that intentionally remain uncovered.
+
+---
+
+### API Contract Verification
+
+Review every public API endpoint.
+
+For each endpoint verify:
+
+* [ ] HTTP method is correct.
+* [ ] Request schema is documented.
+* [ ] Response schema is predictable.
+* [ ] Authentication requirement is documented.
+* [ ] Authorization requirement is documented.
+* [ ] Error responses are predictable.
+* [ ] HTTP status codes are appropriate.
+* [ ] Pagination behavior is documented where applicable.
+* [ ] Validation constraints are documented.
+* [ ] Deprecated endpoints are removed or clearly documented.
+
+Create or update a concise API reference.
+
+If OpenAPI generated by FastAPI is sufficient, ensure the generated API documentation accurately represents the actual API.
+
+---
+
+### Database Reliability Review
+
+Review the database layer as a production dependency.
+
+* [ ] Verify schema initialization.
+* [ ] Verify migrations.
+* [ ] Verify foreign-key enforcement.
+* [ ] Verify indexes.
+* [ ] Verify transaction boundaries.
+* [ ] Verify rollback behavior.
+* [ ] Verify concurrent access behavior.
+* [ ] Verify database backup/recovery limitations.
+* [ ] Verify WAL configuration.
+* [ ] Verify database connection cleanup.
+* [ ] Verify startup behavior when database is missing.
+* [ ] Verify behavior when database is corrupted or unavailable.
+* [ ] Document SQLite limitations.
+
+Do not pretend SQLite provides the same scalability characteristics as PostgreSQL or another server-grade relational database.
+
+---
+
+### Observability
+
+Introduce practical observability appropriate for the project's scale.
+
+Implement or verify:
+
+* [ ] Health endpoint.
+* [ ] Structured or consistently formatted server logs.
+* [ ] Request/error logging.
+* [ ] Authentication failure logging without sensitive credentials.
+* [ ] AI failure logging without exposing prompts containing sensitive information.
+* [ ] WebSocket connection/disconnection logging.
+* [ ] Database error logging.
+* [ ] Startup configuration validation.
+* [ ] Useful production error context.
+* [ ] Request/correlation ID where reasonably practical.
+
+Never log:
+
+* passwords
+* authentication tokens
+* API keys
+* session secrets
+* sensitive user data
+
+---
+
+### Health & Readiness Checks
+
+Review the difference between:
+
+* liveness
+* readiness
+* dependency health
+
+Where practical:
+
+* [ ] `/api/health` confirms the service is running.
+* [ ] Database availability can be detected.
+* [ ] Critical configuration problems are detected at startup.
+* [ ] Missing required production secrets fail safely.
+* [ ] Health checks do not expose secrets or internal infrastructure details.
+
+---
+
+### Error Recovery
+
+Test failure scenarios deliberately.
+
+* [ ] Backend unavailable.
+* [ ] Database unavailable.
+* [ ] AI provider unavailable.
+* [ ] AI timeout.
+* [ ] AI malformed response.
+* [ ] WebSocket disconnect.
+* [ ] WebSocket reconnect.
+* [ ] Slow network.
+* [ ] Failed card mutation.
+* [ ] Failed project mutation.
+* [ ] Failed notification request.
+* [ ] Browser refresh during an active mutation.
+* [ ] Multiple rapid mutations.
+* [ ] Server restart during normal usage.
+
+Verify the application fails gracefully and does not leave the user with misleading state.
+
+---
+
+### Performance Baseline
+
+Measure before making further optimization changes.
+
+Evaluate:
+
+* [ ] Initial frontend load.
+* [ ] Largest practical board rendering.
+* [ ] Drag-and-drop responsiveness.
+* [ ] Search/filter performance.
+* [ ] API response times.
+* [ ] Database query performance.
+* [ ] WebSocket update latency.
+* [ ] AI response latency.
+* [ ] Notification loading.
+* [ ] Activity history loading.
+
+Only optimize where measurements indicate a meaningful problem.
+
+Document any known performance limitations.
+
+---
+
+### Large Dataset Testing
+
+Create realistic stress scenarios.
+
+Test boards containing approximately:
+
+* [ ] 100 cards.
+* [ ] 500 cards.
+* [ ] 1,000 cards.
+
+Verify:
+
+* [ ] Board remains usable.
+* [ ] Drag-and-drop remains responsive.
+* [ ] Search remains responsive.
+* [ ] Filtering remains responsive.
+* [ ] Sorting remains responsive.
+* [ ] API requests remain reasonable.
+* [ ] Activity history does not become unusable.
+* [ ] Notifications remain manageable.
+* [ ] AI requests enforce reasonable payload limits.
+
+Do not optimize prematurely if the current architecture already performs adequately.
+
+---
+
+### Deployment Reproducibility
+
+Verify that another developer can reproduce the project from a clean environment.
+
+Perform a clean setup from scratch.
+
+Verify:
+
+* [ ] Repository clone works.
+* [ ] Dependencies install successfully.
+* [ ] Environment configuration is documented.
+* [ ] Database initializes correctly.
+* [ ] Backend starts correctly.
+* [ ] Frontend starts correctly.
+* [ ] Tests run successfully.
+* [ ] Production build succeeds.
+* [ ] Docker build succeeds.
+* [ ] Docker container starts.
+* [ ] Application is accessible.
+* [ ] No undocumented local dependency is required.
+
+---
+
+### Environment Configuration
+
+Review all environment variables.
+
+For each variable:
+
+* [ ] Document purpose.
+* [ ] Document whether required or optional.
+* [ ] Document development behavior.
+* [ ] Document production behavior.
+* [ ] Provide safe example values where appropriate.
+* [ ] Never provide real secrets.
+* [ ] Ensure production secrets do not have unsafe defaults.
+
+Create or update:
+
+`.env.example`
+
+if appropriate.
+
+---
+
+### Docker Verification
+
+Perform a clean Docker build.
+
+* [ ] Build succeeds without local-only dependencies.
+* [ ] Image starts successfully.
+* [ ] Required environment variables are handled correctly.
+* [ ] Production server starts correctly.
+* [ ] Health endpoint works inside the container.
+* [ ] Frontend/backend communication works.
+* [ ] No unnecessary build artifacts remain in the final image.
+* [ ] No secrets are copied into the image.
+* [ ] Image uses an appropriate non-root configuration where practical.
+* [ ] Image size is reviewed for unnecessary bloat.
+
+---
+
+### CI/CD Readiness
+
+If GitHub Actions or another CI system is present, verify:
+
+* [ ] Tests run automatically.
+* [ ] Frontend build runs automatically.
+* [ ] Backend tests run automatically.
+* [ ] Security/dependency checks run where appropriate.
+* [ ] Failed checks prevent false-success builds.
+* [ ] Secrets are provided through CI secret management.
+* [ ] Production deployment is not triggered by broken builds.
+
+If CI is not currently implemented, evaluate whether a minimal CI workflow should be added.
+
+Do not introduce complicated CI infrastructure unnecessarily.
+
+---
+
+### Git Repository Hygiene
+
+Review the repository before release.
+
+* [ ] No secrets committed.
+* [ ] No `.env` files containing secrets.
+* [ ] No local databases containing sensitive user data unless intentionally included as sanitized seed data.
+* [ ] No build directories.
+* [ ] No `node_modules`.
+* [ ] No Python virtual environments.
+* [ ] No temporary files.
+* [ ] No IDE-specific artifacts unless intentionally documented.
+* [ ] `.gitignore` is complete.
+* [ ] Commit history does not expose credentials.
+* [ ] Repository contains only intentional project artifacts.
+
+If secrets were ever committed historically, determine whether they require rotation or removal from repository history.
+
+---
+
+### Documentation & Developer Experience
+
+Ensure a new developer can understand the project without relying on undocumented assumptions.
+
+README must clearly explain:
+
+* [ ] What the application does.
+* [ ] Core features.
+* [ ] Live demo.
+* [ ] Architecture.
+* [ ] Technology stack.
+* [ ] Authentication.
+* [ ] RBAC.
+* [ ] WebSockets.
+* [ ] AI architecture.
+* [ ] Database.
+* [ ] Environment variables.
+* [ ] Local setup.
+* [ ] Testing.
+* [ ] Docker.
+* [ ] Deployment.
+* [ ] Known limitations.
+* [ ] Engineering tradeoffs.
+
+Ensure documentation does not make unsupported claims such as "enterprise-grade" unless the implementation and infrastructure justify that terminology.
+
+---
+
+### Architecture Documentation
+
+Create or update an architecture diagram showing:
+
+```text
+User Browser
+     |
+     v
+Next.js Frontend
+     |
+     +--------------------+
+     |                    |
+     v                    v
+REST API              WebSocket
+     |                    |
+     +---------+----------+
+               |
+               v
+          FastAPI Backend
+               |
+       +-------+-------+
+       |       |       |
+       v       v       v
+    SQLite    AI    Services
+```
+
+Adapt the diagram to the actual implementation.
+
+Document:
+
+* authentication flow
+* authorization flow
+* board persistence flow
+* WebSocket synchronization
+* AI request flow
+* notification flow
+
+---
+
+### Engineering Decision Record
+
+Document major architectural decisions and why they were made.
+
+At minimum document:
+
+* [ ] Next.js choice.
+* [ ] FastAPI choice.
+* [ ] SQLite choice.
+* [ ] WebSocket choice.
+* [ ] AI provider choice.
+* [ ] Authentication strategy.
+* [ ] RBAC strategy.
+* [ ] Optimistic update strategy.
+* [ ] Deployment architecture.
+* [ ] Docker architecture.
+
+For each decision include:
+
+* Context.
+* Decision.
+* Reasoning.
+* Tradeoffs.
+* Known limitations.
+
+---
+
+### Final Portfolio Review
+
+Review the project as if it were being evaluated by a software engineering interviewer.
+
+Verify that the project demonstrates:
+
+* [ ] Full-stack development.
+* [ ] REST API design.
+* [ ] Database design.
+* [ ] Authentication.
+* [ ] Authorization/RBAC.
+* [ ] Real-time communication.
+* [ ] AI integration.
+* [ ] Testing.
+* [ ] Docker.
+* [ ] Cloud deployment.
+* [ ] Error handling.
+* [ ] Security awareness.
+* [ ] Engineering tradeoff awareness.
+
+Remove exaggerated claims.
+
+The README should communicate engineering decisions and measurable capabilities rather than simply listing technologies.
+
+---
+
+### Final Quality Gate
+
+Before marking Part 29 complete:
+
+* [ ] Complete test suite passes.
+* [ ] Type checking passes.
+* [ ] Linting passes.
+* [ ] Production frontend build succeeds.
+* [ ] Production Docker build succeeds.
+* [ ] Production container starts.
+* [ ] Health checks pass.
+* [ ] Deployment smoke tests pass.
+* [ ] Authentication works.
+* [ ] Authorization works.
+* [ ] Multi-user isolation works.
+* [ ] WebSockets work.
+* [ ] AI works.
+* [ ] Notifications work.
+* [ ] Mobile workflows work.
+* [ ] No secrets are committed.
+* [ ] Documentation matches implementation.
+* [ ] No known P0 security issues remain.
+* [ ] No known critical data-integrity issues remain.
+* [ ] Known infrastructure limitations are documented.
+
+---
+
+### Required Final Report
+
+Produce a concise engineering release report containing:
+
+#### Project Status
+
+* Current version/commit.
+* Deployment status.
+* Test status.
+* Build status.
+* Security status.
+
+#### Verification Results
+
+| Area                  | Status    | Evidence      |
+| --------------------- | --------- | ------------- |
+| Backend tests         | PASS/FAIL | Actual result |
+| Frontend tests        | PASS/FAIL | Actual result |
+| E2E tests             | PASS/FAIL | Actual result |
+| Security tests        | PASS/FAIL | Actual result |
+| Type checking         | PASS/FAIL | Actual result |
+| Linting               | PASS/FAIL | Actual result |
+| Production build      | PASS/FAIL | Actual result |
+| Docker build          | PASS/FAIL | Actual result |
+| Deployment smoke test | PASS/FAIL | Actual result |
+
+Do not invent numbers or claim successful checks that were not executed.
+
+#### Remaining Limitations
+
+List all meaningful remaining limitations, including infrastructure limitations.
+
+#### Final Engineering Assessment
+
+Classify the project as:
+
+* NOT READY
+* MVP READY
+* PORTFOLIO READY
+* PRODUCTION READY
+
+The classification must be supported by actual verification evidence.
 
 ### Success Criteria
-- 100% test pass rate across 82 total automated test cases.
-- Master documentation PDF and Markdown fully synced with latest system specifications.
-- `pm/docs/PLAN.md` updated with Part 29 tasks marked complete.
-- `README.md` and `pm/README.md` updated with Part 29 final deployment status.
-- GitHub repository updated with latest production release commit.
 
+The project is considered complete only when:
+
+* The codebase is maintainable.
+* The test suite is reliable.
+* Production configuration is reproducible.
+* Observability is sufficient for the project's scale.
+* Deployment is reproducible.
+* Documentation accurately represents the implementation.
+* Repository hygiene is clean.
+* Engineering tradeoffs are documented.
+* No critical security or data-integrity issues remain.
+* All major user workflows pass final verification.
+* The project can be confidently presented as a serious full-stack engineering project.
+
+Do not add new product features during this part unless required to resolve a discovered reliability, security, accessibility, or production-readiness issue.
