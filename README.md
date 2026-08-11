@@ -9,6 +9,7 @@ A modern, enterprise-grade Kanban project management application featuring dynam
 - **Frontend Application (Vercel)**: [https://drag-n-drop-lilac.vercel.app/](https://drag-n-drop-lilac.vercel.app/)
 - **Live Backend API (Render)**: [https://drag-n-drop-28p3.onrender.com](https://drag-n-drop-28p3.onrender.com)
 - **Security & Release Certification**: [`pm/docs/FINAL_RELEASE_CERTIFICATION.md`](./pm/docs/FINAL_RELEASE_CERTIFICATION.md) (**Status: `PRODUCTION READY`**)
+- **Part 29 Release Plan**: [`pm/docs/PLAN.md`](./pm/docs/PLAN.md) (**Status: `PART 29 COMPLETE`**)
 - **Master Documentation**: [`documentation/Kanban_Studio_Pro_Master_Documentation.pdf`](./documentation/Kanban_Studio_Pro_Master_Documentation.pdf)
 
 ---
