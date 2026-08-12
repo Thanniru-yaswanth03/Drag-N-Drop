@@ -19,7 +19,9 @@ export function useWebSocket({ projectId, username, onMessage }: UseWebSocketOpt
     setStatus("connecting");
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const host = window.location.host;
-    const url = `${protocol}//${host}/ws/projects/${encodeURIComponent(projectId)}?username=${encodeURIComponent(username)}`;
+    const token = typeof localStorage !== "undefined" ? localStorage.getItem("pm_auth_token") : null;
+    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : "";
+    const url = `${protocol}//${host}/ws/projects/${encodeURIComponent(projectId)}${tokenParam}`;
 
     try {
       const ws = new WebSocket(url);

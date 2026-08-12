@@ -57,27 +57,14 @@ export async function registerApi(username: string, password: string) {
     });
     const data = await response.json().catch(() => ({}));
     if (response.ok && data.success) {
-      if (typeof localStorage !== "undefined") {
-        if (data.token) {
-          localStorage.setItem("pm_auth_token", data.token);
-        }
-        const localUsers = JSON.parse(localStorage.getItem("pm_registered_users") || "{}");
-        localUsers[cleanUsername] = password;
-        localUsers[username.trim()] = password;
-        localStorage.setItem("pm_registered_users", JSON.stringify(localUsers));
+      if (typeof localStorage !== "undefined" && data.token) {
+        localStorage.setItem("pm_auth_token", data.token);
       }
       return { success: true, user: data.user || cleanUsername, token: data.token };
     }
     return { success: false, error: data.detail || "Registration failed" };
   } catch (error) {
     console.error("Error registering user:", error);
-    if (typeof localStorage !== "undefined") {
-      const localUsers = JSON.parse(localStorage.getItem("pm_registered_users") || "{}");
-      localUsers[cleanUsername] = password;
-      localUsers[username.trim()] = password;
-      localStorage.setItem("pm_registered_users", JSON.stringify(localUsers));
-      return { success: true, user: cleanUsername };
-    }
     return { success: false, error: "Network error during registration" };
   }
 }

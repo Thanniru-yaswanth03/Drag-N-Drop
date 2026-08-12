@@ -10,7 +10,8 @@ from typing import List, Dict, Any, Optional
 DB_PATH = Path(__file__).resolve().parent / "pm.db"
 
 
-def hash_password(password: str, salt: str = "drag_n_drop_salt") -> str:
+def hash_password(password: str, salt: str) -> str:
+    """Hash a password using PBKDF2-SHA256 with a caller-supplied salt."""
     key = hashlib.pbkdf2_hmac(
         "sha256",
         password.encode("utf-8"),
@@ -20,7 +21,8 @@ def hash_password(password: str, salt: str = "drag_n_drop_salt") -> str:
     return key.hex()
 
 
-def verify_password(password: str, password_hash: str, salt: str = "drag_n_drop_salt") -> bool:
+def verify_password(password: str, password_hash: str, salt: str) -> bool:
+    """Verify a password against a hash using the per-user salt."""
     return hash_password(password, salt) == password_hash
 
 
@@ -41,6 +43,7 @@ def init_db(db_path: Path = None):
             id TEXT PRIMARY KEY,
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
+            password_salt TEXT NOT NULL DEFAULT 'legacy',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -149,15 +152,12 @@ def init_db(db_path: Path = None):
         cursor.execute("ALTER TABLE cards ADD COLUMN due_date TEXT DEFAULT NULL")
     if "tags" not in existing_cols:
         cursor.execute("ALTER TABLE cards ADD COLUMN tags TEXT DEFAULT '[]'")
-    # Seed default user if not exists
-    cursor.execute("SELECT id FROM users WHERE username = ?", ("user",))
-    if not cursor.fetchone():
-        user_id = "user-default"
-        hashed = hash_password("password")
-        cursor.execute(
-            "INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)",
-            (user_id, "user", hashed),
-        )
+
+    # Safe migration: add password_salt column if missing
+    cursor.execute("PRAGMA table_info(users)")
+    user_cols = {row["name"] for row in cursor.fetchall()}
+    if "password_salt" not in user_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN password_salt TEXT NOT NULL DEFAULT 'legacy'")
 
     conn.commit()
     conn.close()
@@ -196,6 +196,7 @@ def create_session(username: str, db_path: Path = None) -> dict:
 
 
 def verify_session_token(token: str, db_path: Path = None) -> Optional[dict]:
+    """Verify a session token by looking it up in the sessions table only."""
     if not token or not isinstance(token, str):
         return None
     conn = get_db_connection(db_path)
@@ -205,13 +206,6 @@ def verify_session_token(token: str, db_path: Path = None) -> Optional[dict]:
     conn.close()
     if row:
         return {"userId": row["user_id"], "username": row["username"]}
-    
-    # Backward compatibility for legacy static tokens
-    if token.startswith("token-"):
-        clean_user = token.replace("token-", "").replace("-session", "").split("-")[0].strip()
-        if clean_user:
-            return {"userId": f"user-{clean_user}", "username": clean_user}
-            
     return None
 
 
@@ -240,16 +234,18 @@ def register_user(username: str, password: str, db_path: Path = None):
         return {"success": False, "error": "Username is already taken."}
 
     user_id = f"user-{uuid.uuid4().hex[:8]}"
-    hashed = hash_password(password)
+    # Use a unique cryptographically random salt per user
+    salt = secrets.token_hex(16)
+    hashed = hash_password(password, salt)
 
     cursor.execute(
-        "INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)",
-        (user_id, username_clean, hashed),
+        "INSERT INTO users (id, username, password_hash, password_salt) VALUES (?, ?, ?, ?)",
+        (user_id, username_clean, hashed, salt),
     )
     conn.commit()
     conn.close()
 
-    # Seed default board for the new user
+    # Seed default board for the new user (only once at registration)
     seed_default_board(username_clean, db_path=db_path)
     return create_session(username_clean, db_path=db_path)
 
@@ -259,16 +255,22 @@ def authenticate_user(username: str, password: str, db_path: Path = None):
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id, username, password_hash FROM users WHERE LOWER(username) = ?", (username_clean,))
+    cursor.execute(
+        "SELECT id, username, password_hash, password_salt FROM users WHERE LOWER(username) = ?",
+        (username_clean,)
+    )
     row = cursor.fetchone()
     conn.close()
 
     if not row:
-        if username_clean in ("user", "testuser") and password == "password":
-            return create_session(username_clean, db_path=db_path)
         return None
 
-    if verify_password(password, row["password_hash"]):
+    salt = row["password_salt"] or "legacy"
+    if verify_password(password, row["password_hash"], salt):
+        return create_session(row["username"], db_path=db_path)
+
+    # Legacy: check with old hardcoded salt for existing accounts migrated without salt
+    if salt == "legacy" and verify_password(password, row["password_hash"], "drag_n_drop_salt"):
         return create_session(row["username"], db_path=db_path)
 
     return None
@@ -458,7 +460,6 @@ def get_project_activities(project_id: str, user_id: str = "user", limit: int = 
 
 
 def get_projects(user_id: str = "user", db_path: Path = None):
-    seed_default_board(user_id, db_path)
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
 
@@ -614,7 +615,6 @@ def delete_project(user_id: str, project_id: str, db_path: Path = None):
 
 
 def get_board(user_id: str = "user", db_path: Path = None, project_id: str = None):
-    seed_default_board(user_id, db_path)
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
 

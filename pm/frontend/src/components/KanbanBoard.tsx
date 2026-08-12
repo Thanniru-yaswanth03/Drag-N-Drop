@@ -223,35 +223,35 @@ export const KanbanBoard = () => {
   }, [canUndo, canRedo, undo, redo, persistBoard]);
 
   const handleCreateProject = async (name: string) => {
-    const activeUser = user || localStorage.getItem("auth_user") || "user";
-    const newProj = await createProjectApi(activeUser, name);
+    if (!user) return;
+    const newProj = await createProjectApi(user, name);
     if (newProj && newProj.id) {
       setProjects((prev) => {
         const exists = prev.some((p) => p.id === newProj.id);
         return exists ? prev : [...prev, newProj];
       });
       setActiveProjectId(newProj.id);
-      localStorage.setItem(`kanban_active_project_${activeUser}`, newProj.id);
+      localStorage.setItem(`kanban_active_project_${user}`, newProj.id);
     }
   };
 
   const handleRenameProject = async (projId: string, name: string) => {
-    const activeUser = user || localStorage.getItem("auth_user") || "user";
-    const updated = await updateProjectApi(activeUser, projId, name);
+    if (!user) return;
+    const updated = await updateProjectApi(user, projId, name);
     if (updated) {
       setProjects((prev) => prev.map((p) => (p.id === projId ? updated : p)));
     }
   };
 
   const handleDeleteProject = async (projId: string) => {
-    const activeUser = user || localStorage.getItem("auth_user") || "user";
-    const ok = await deleteProjectApi(activeUser, projId);
+    if (!user) return;
+    const ok = await deleteProjectApi(user, projId);
     if (ok) {
       const remaining = projects.filter((p) => p.id !== projId);
       setProjects(remaining);
       if (remaining.length > 0) {
         setActiveProjectId(remaining[0].id);
-        localStorage.setItem(`kanban_active_project_${activeUser}`, remaining[0].id);
+        localStorage.setItem(`kanban_active_project_${user}`, remaining[0].id);
       }
     }
   };
@@ -328,30 +328,8 @@ export const KanbanBoard = () => {
         setUser(authedUser);
         return true;
       }
-    } catch {
-      // Fallback for standalone mode
-    }
-
-    if (typeof localStorage !== "undefined") {
-      const localUsers = JSON.parse(localStorage.getItem("pm_registered_users") || "{}");
-      if (
-        (localUsers[cleanUser] && localUsers[cleanUser] === password) ||
-        (localUsers[username.trim()] && localUsers[username.trim()] === password)
-      ) {
-        setProjects([]);
-        setActiveProjectId(null);
-        localStorage.setItem("pm_auth_user", cleanUser);
-        setUser(cleanUser);
-        return true;
-      }
-    }
-
-    if ((cleanUser === "user" || cleanUser === "testuser") && password === "password") {
-      setProjects([]);
-      setActiveProjectId(null);
-      localStorage.setItem("pm_auth_user", cleanUser);
-      setUser(cleanUser);
-      return true;
+    } catch (err) {
+      console.error("Login API error:", err);
     }
 
     return false;
@@ -510,16 +488,22 @@ export const KanbanBoard = () => {
   };
 
   const handleResetBoard = async () => {
+    if (!user) return;
     try {
-      const activeUser = user || "user";
+      const token = localStorage.getItem("pm_auth_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+        headers["X-Session-Token"] = token;
+      }
       const response = await fetch(
-        getApiUrl(`/api/board/reset?username=${encodeURIComponent(activeUser)}${activeProjectId ? `&project_id=${encodeURIComponent(activeProjectId)}` : ""}`),
-        { method: "POST" }
+        getApiUrl(`/api/board/reset${activeProjectId ? `?project_id=${encodeURIComponent(activeProjectId)}` : ""}`),
+        { method: "POST", headers }
       );
       if (response.ok) {
         const data = await response.json();
         resetBoard(data);
-        if (user && activeProjectId) {
+        if (activeProjectId) {
           localStorage.setItem(`kanban_board_${user}_${activeProjectId}`, JSON.stringify(data));
         }
         return;

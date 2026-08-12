@@ -26,6 +26,7 @@ def test_init_and_seed_db():
 
 
 def test_save_board_data():
+    database.seed_default_board("testuser", TEST_DB_PATH)
     board = database.get_board("testuser", TEST_DB_PATH)
     board["columns"][0]["title"] = "Updated Backlog"
     updated = database.save_board("testuser", board, TEST_DB_PATH)
@@ -34,18 +35,41 @@ def test_save_board_data():
 
 def test_api_board_endpoints():
     client = TestClient(app)
+    import uuid
+    # Use a unique username per test run to avoid conflicts with live DB
+    test_username = f"apitestuser_{uuid.uuid4().hex[:8]}"
+    # Register and login to get a session token
+    reg = client.post("/api/auth/register", json={"username": test_username, "password": "pass1234"})
+    if reg.status_code == 200:
+        token = reg.json().get("token")
+    else:
+        # Fall back: already exists
+        login = client.post("/api/auth/login", json={"username": test_username, "password": "pass1234"})
+        assert login.status_code == 200, f"Could not auth: {login.text}"
+        token = login.json().get("token")
+    assert token, "Expected token from register/login"
+    auth_headers = {"Authorization": f"Bearer {token}"}
+
+    # Seed the default board so the project exists
+    projects_resp = client.get("/api/projects", headers=auth_headers)
+    assert projects_resp.status_code == 200
+    projects = projects_resp.json()
+    assert len(projects) >= 1
+    project_id = projects[0]["id"]
+
     # Test GET /api/board
-    response = client.get("/api/board?username=user")
+    response = client.get(f"/api/board?project_id={project_id}", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert "columns" in data
     assert len(data["columns"]) == 5
 
     # Test POST /api/cards with Part 11 fields
+    backlog_col_id = data["columns"][0]["id"]
     card_resp = client.post(
-        "/api/cards",
+        f"/api/cards?project_id={project_id}",
         json={
-            "columnId": "col-backlog",
+            "columnId": backlog_col_id,
             "cardId": "card-test-99",
             "title": "Test Card",
             "details": "Notes",
@@ -55,6 +79,7 @@ def test_api_board_endpoints():
             "tags": ["frontend", "part11"],
             "assignee": "yash",
         },
+        headers=auth_headers,
     )
     assert card_resp.status_code == 200
     card_data = card_resp.json()["card"]
@@ -72,6 +97,7 @@ def test_api_board_endpoints():
             "priority": "low",
             "tags": ["updated"],
         },
+        headers=auth_headers,
     )
     assert put_resp.status_code == 200
     updated_card = put_resp.json()["card"]
@@ -80,7 +106,7 @@ def test_api_board_endpoints():
     assert updated_card["tags"] == ["updated"]
 
     # Test DELETE /api/cards
-    del_resp = client.delete("/api/cards/card-test-99")
+    del_resp = client.delete("/api/cards/card-test-99", headers=auth_headers)
     assert del_resp.status_code == 200
     assert del_resp.json()["deleted"] == "card-test-99"
 
