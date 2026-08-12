@@ -3068,3 +3068,711 @@ At the end, provide:
 6. **Exact Persistence Flow**:
    `User Login → Session Token Stored → Fetch Projects (with Bearer Token) → Set Active Project → Fetch Board (from SQLite DB) → Board State Loaded → Card Mutations (Add/Edit/Move/Delete) → Persist Board (with Bearer Token) → SQLite DB Updated → Logout (Token Revoked) → Login Again → Fresh Fetch from SQLite DB → All modified cards present`
 7. **Status**: `PRODUCTION READY`
+## Fix Critical Data Persistence, User Isolation, and Demo Account Bugs
+
+My project currently has serious data persistence problems. I need you to **fully investigate and fix the root cause**, not patch the symptoms.
+
+### Current Bugs
+
+1. I have a demo/test user with a username and password that users can use to log in.
+2. When logged in as the demo user, I can delete cards/tasks/board data and the UI updates correctly.
+3. However, after logging out, restarting the app, or logging in again, the deleted data reappears.
+4. I previously cleared the entire board, but after logging in again later, the old board data appeared again.
+5. When I log in as another user and make changes, those changes are also not reliably persisted.
+6. User-specific data appears to be getting restored instead of loading the actual latest state from the database.
+7. I need each authenticated user's board/data to be completely isolated from every other user.
+
+This strongly suggests that some combination of the following may be happening:
+
+* Changes are only being stored in React/Next.js/local state.
+* API/database mutation requests are failing.
+* Database writes are not awaited or handled correctly.
+* The frontend is not calling the persistence API after mutations.
+* The backend is writing to the wrong database document.
+* Queries are not filtering by the authenticated user's ID.
+* A default/demo board is being recreated on every login.
+* Seed/demo data is overwriting existing database data.
+* Authentication/session user IDs are not being propagated correctly.
+* The app is loading stale cached data.
+* Server-side caching/revalidation is returning stale board data.
+* Delete/update operations are only modifying frontend state.
+* Database operations are failing silently.
+* The application is using hardcoded demo data as a fallback when it should query the user's persisted data.
+* Multiple users may accidentally be sharing the same board/document.
+
+---
+
+# Your Task
+
+## 1. Investigate the ENTIRE persistence flow
+
+Before modifying anything, inspect the entire project.
+
+Trace this complete flow:
+
+```text
+Login
+  ↓
+Authentication/session creation
+  ↓
+Authenticated user identification
+  ↓
+User/board retrieval
+  ↓
+Frontend state initialization
+  ↓
+Create/update/delete operation
+  ↓
+API request
+  ↓
+Backend authentication
+  ↓
+User identification on backend
+  ↓
+Database query
+  ↓
+Database mutation
+  ↓
+Response
+  ↓
+Frontend state update
+  ↓
+Next login / refresh
+  ↓
+Database retrieval
+```
+
+Do not assume where the bug is.
+
+Find exactly where the persisted state diverges from the UI state.
+
+---
+
+# 2. Inspect the database schema/models
+
+Identify:
+
+* User model
+* Board model
+* Card/task model
+* Column model
+* Any project/workspace model
+* Relationships between users and boards
+* Authentication/session model
+* Seed/default/demo data
+* Database initialization code
+
+Verify that every user's data has a reliable ownership relationship.
+
+For example, the architecture should effectively behave like:
+
+```text
+User A
+ └── Board A
+      ├── Column A
+      ├── Card A
+      └── Card B
+
+User B
+ └── Board B
+      ├── Column A
+      └── Card C
+```
+
+User A must NEVER be able to retrieve or mutate User B's board.
+
+Do not rely on a frontend-supplied `userId` alone for authorization.
+
+The backend should derive the authenticated user from the trusted session/token.
+
+---
+
+# 3. Audit EVERY mutation
+
+Find every operation that modifies persistent data.
+
+This includes:
+
+* Create card
+* Edit card
+* Delete card
+* Move card
+* Reorder cards
+* Rename card
+* Create column
+* Rename column
+* Delete column
+* Reorder columns
+* Clear board
+* Reset board
+* Create board
+* Update board
+* Delete board
+* Any bulk update
+* Any drag-and-drop persistence
+* Any AI-generated board changes
+
+For every mutation verify:
+
+```text
+Frontend action
+→ API call
+→ HTTP method
+→ endpoint
+→ authenticated user
+→ request payload
+→ backend validation
+→ database query
+→ database mutation
+→ awaited database result
+→ API response
+→ frontend handling
+```
+
+Make sure the database operation is actually awaited.
+
+For example, do not leave mutations in a state where the application can update the UI before the database operation has completed successfully.
+
+---
+
+# 4. Fix delete persistence
+
+This is especially important.
+
+If I delete a card and the UI removes it, the deletion must also be persisted.
+
+If I delete:
+
+```text
+Card ID: 123
+```
+
+the database must no longer return that card for that user's board.
+
+If I clear the entire board, the database must actually reflect an empty board.
+
+After performing a delete/clear operation, verify persistence by:
+
+1. Performing the mutation.
+2. Waiting for the database response.
+3. Fetching the board again from the database.
+4. Confirming the deleted data is actually gone.
+5. Refreshing the browser.
+6. Confirming it remains gone.
+7. Logging out.
+8. Logging back in.
+9. Confirming it remains gone.
+
+Do not merely make the UI look correct.
+
+---
+
+# 5. Fix user isolation
+
+This is critical.
+
+Test with at least two users:
+
+```text
+User A
+User B
+```
+
+Create clearly different data:
+
+```text
+User A:
+- Card A1
+- Card A2
+
+User B:
+- Card B1
+- Card B2
+```
+
+Then verify:
+
+### User A
+
+Can see:
+
+```text
+A1
+A2
+```
+
+Cannot see:
+
+```text
+B1
+B2
+```
+
+### User B
+
+Can see:
+
+```text
+B1
+B2
+```
+
+Cannot see:
+
+```text
+A1
+A2
+```
+
+Then perform mutations independently.
+
+For example:
+
+```text
+User A deletes A1
+User B deletes B1
+```
+
+Both operations must remain isolated.
+
+---
+
+# 6. Investigate the demo/test user
+
+The demo account is currently behaving incorrectly.
+
+Find every place where demo/default data is created or loaded.
+
+Search the entire repository for things like:
+
+```text
+demo
+seed
+seedData
+defaultData
+initialData
+mockData
+sampleData
+defaultBoard
+createDefaultBoard
+initializeBoard
+resetBoard
+fallback
+```
+
+Determine whether demo data is being:
+
+* Inserted every time the user logs in
+* Inserted every time the app starts
+* Inserted whenever a board is missing
+* Used as a fallback when an API request fails
+* Recreated after deletion
+* Used instead of querying the database
+
+The application must NOT automatically restore deleted demo data.
+
+If the demo account is intended to start with sample data, that initialization should happen only when appropriate, such as when the demo user's board genuinely does not exist.
+
+It must NOT overwrite an existing board.
+
+---
+
+# 7. Check for accidental database resets/seeding
+
+Search for code that performs:
+
+```text
+deleteMany
+deleteOne
+dropDatabase
+drop
+insertMany
+upsert
+replaceOne
+createMany
+seed
+initialize
+reset
+```
+
+Pay special attention to code executed during:
+
+* Application startup
+* Development server startup
+* Login
+* Registration
+* Session creation
+* API requests
+* Page loading
+* Middleware execution
+* Database connection initialization
+
+Make sure development/demo initialization cannot accidentally overwrite production/user data.
+
+---
+
+# 8. Check caching and stale data
+
+Because this appears to be a Next.js application, inspect:
+
+* Server Components
+* Client Components
+* `fetch`
+* `cache`
+* `revalidate`
+* `no-store`
+* Route handlers
+* Server Actions
+* React Query/SWR if used
+* Next.js router caching
+* Browser/localStorage/sessionStorage
+* Any custom caching layer
+
+Make sure board data isn't being served from stale cache after mutations.
+
+For authenticated user-specific data, ensure the retrieval strategy is appropriate for private dynamic data.
+
+After a mutation, make sure the UI eventually reflects the database's actual state rather than merely assuming the mutation succeeded.
+
+---
+
+# 9. Check error handling
+
+Find every database/API mutation that can fail.
+
+Do NOT silently ignore errors.
+
+Bad:
+
+```text
+try {
+   await updateBoard()
+} catch {
+   // nothing
+}
+```
+
+Instead:
+
+* Log useful server-side errors.
+* Return an appropriate HTTP status.
+* Return a meaningful error response.
+* Handle the error on the frontend.
+* Do not pretend the UI mutation succeeded if persistence failed.
+
+The user should never see:
+
+```text
+UI says: Deleted
+Database says: Nope, still here.
+```
+
+---
+
+# 10. Verify authentication identity
+
+Trace exactly how the authenticated user is identified.
+
+Verify:
+
+```text
+Login
+→ session/token
+→ authenticated user
+→ user ID
+→ board query
+```
+
+Do not trust something like:
+
+```text
+request.body.userId
+```
+
+as the sole source of authorization.
+
+The server should use the authenticated session/token to determine who is making the request.
+
+Every board query/mutation should effectively be scoped to the authenticated user.
+
+---
+
+# 11. Remove dangerous fallback behavior
+
+If the database request fails and the application currently does something like:
+
+```text
+database failed
+→ return default board
+```
+
+remove that behavior.
+
+A database failure must NOT look like:
+
+```text
+"No data exists, therefore recreate the demo board."
+```
+
+Instead:
+
+```text
+Database error
+→ return error
+→ frontend displays appropriate error state
+```
+
+Missing data and failed database access are two completely different situations.
+
+---
+
+# 12. Add automated persistence tests
+
+Do not consider this fixed until there are tests covering persistence.
+
+At minimum create tests for:
+
+### Create
+
+```text
+Create card
+→ database contains card
+→ refresh
+→ card still exists
+```
+
+### Update
+
+```text
+Update card
+→ database contains updated card
+→ refresh
+→ updated card remains
+```
+
+### Delete
+
+```text
+Delete card
+→ database no longer contains card
+→ refresh
+→ card remains deleted
+```
+
+### Clear board
+
+```text
+Clear board
+→ database contains no board cards
+→ refresh
+→ board remains empty
+```
+
+### User isolation
+
+```text
+User A creates A1
+User B creates B1
+
+A sees A1
+A does not see B1
+
+B sees B1
+B does not see A1
+```
+
+### Logout/login persistence
+
+```text
+User A modifies board
+→ logout
+→ login again
+→ exact persisted state is restored
+```
+
+### Demo account
+
+```text
+Demo user deletes sample data
+→ logout
+→ login again
+→ deleted data does NOT magically return
+```
+
+---
+
+# 13. Do not rewrite working architecture unnecessarily
+
+This is an existing project.
+
+Before changing architecture:
+
+1. Inspect the current implementation.
+2. Identify the actual root cause.
+3. Explain the root cause.
+4. Make the smallest reliable architectural change required.
+5. Preserve existing working features.
+
+Do NOT blindly rewrite the application.
+
+Do NOT replace the database layer just because persistence is broken.
+
+Do NOT rewrite authentication unless the investigation proves authentication is responsible.
+
+Do NOT create duplicate APIs or duplicate state-management systems.
+
+---
+
+# 14. Add database-level safeguards
+
+Where appropriate, enforce ownership at the database query/mutation level.
+
+For example, instead of:
+
+```text
+findBoard(boardId)
+```
+
+prefer an ownership-aware operation equivalent to:
+
+```text
+findBoard({
+    id: boardId,
+    userId: authenticatedUserId
+})
+```
+
+Likewise for updates/deletes:
+
+```text
+update/delete WHERE boardId = X AND ownerId = authenticatedUserId
+```
+
+This prevents cross-user modification even if a malicious or buggy frontend sends another user's ID.
+
+---
+
+# 15. Verify the fix manually
+
+After implementation, perform a complete end-to-end test.
+
+Use at least:
+
+```text
+User A
+User B
+Demo User
+```
+
+For each account:
+
+1. Login.
+2. Inspect initial board.
+3. Create data.
+4. Edit data.
+5. Move/reorder data.
+6. Delete individual items.
+7. Clear the board.
+8. Refresh.
+9. Logout.
+10. Restart/reload the application.
+11. Login again.
+12. Verify the exact state persisted.
+
+Then switch users and verify isolation.
+
+---
+
+# 16. Important debugging requirement
+
+Before declaring the issue fixed, inspect the actual database state.
+
+Do not rely only on:
+
+```text
+console.log("saved")
+```
+
+or:
+
+```text
+UI updated successfully
+```
+
+Actually query the database and verify:
+
+```text
+What was stored before mutation?
+What mutation was sent?
+What database operation executed?
+What did the database return?
+What is actually stored afterward?
+What does the next GET request return?
+```
+
+If necessary, temporarily add detailed server-side logging around the persistence layer.
+
+---
+
+# 17. Final report
+
+After fixing everything, provide me with:
+
+### Root Cause
+
+Explain exactly why the data was disappearing/reappearing.
+
+### Files Changed
+
+List every file modified and why.
+
+### Database Fix
+
+Explain how user data is now persisted and isolated.
+
+### Authentication Fix
+
+Explain how the authenticated user's identity is now enforced.
+
+### Demo User Fix
+
+Explain why demo data was returning and how that behavior was fixed.
+
+### Caching Fix
+
+Explain whether stale caching was involved and what was changed.
+
+### Tests
+
+List every test you ran and the result.
+
+### Manual Verification
+
+Confirm:
+
+```text
+Create → persists
+Update → persists
+Delete → persists
+Clear → persists
+Refresh → persists
+Logout/login → persists
+User A ≠ User B
+Demo user data does not resurrect itself
+```
+
+---
+
+## Critical Rule
+
+**Do not tell me the project is fixed until you have verified persistence by actually reading the database after mutations and after a fresh login.**
+
+The requirement is not:
+
+> "Make the UI appear correct."
+
+The requirement is:
+
+> **"Make the database the source of truth and ensure every authenticated user's changes persist correctly across refreshes, restarts, and future logins without leaking or restoring another user's data."**
+
+Start by inspecting the repository and tracing the complete data lifecycle. Then identify the root cause before making changes.

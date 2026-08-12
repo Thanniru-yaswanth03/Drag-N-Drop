@@ -28,7 +28,7 @@ import { ProjectMembersModal } from "@/components/ProjectMembersModal";
 import { NotificationCenterModal } from "@/components/NotificationCenterModal";
 import { useUndoRedo } from "@/lib/useUndoRedo";
 import { useWebSocket } from "@/lib/useWebSocket";
-import { createId, initialData, moveCard, type Card, type BoardData } from "@/lib/kanban";
+import { createId, emptyBoardData, initialData, moveCard, type Card, type BoardData } from "@/lib/kanban";
 import {
   getApiUrl,
   fetchBoard,
@@ -64,7 +64,7 @@ export const KanbanBoard = () => {
     redo,
     canUndo,
     canRedo,
-  } = useUndoRedo<BoardData>(initialData);
+  } = useUndoRedo<BoardData>(emptyBoardData);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [isLoadingBoard, setIsLoadingBoard] = useState(false);
@@ -139,14 +139,31 @@ export const KanbanBoard = () => {
   // Fetch board data whenever active project changes
   useEffect(() => {
     if (!user || !activeProjectId) return;
+    const cacheKey = `kanban_board_${user}_${activeProjectId}`;
     localStorage.setItem(`kanban_active_project_${user}`, activeProjectId);
+
+    // Try loading cached board for instant render without showing default cards
+    const cachedRaw = localStorage.getItem(cacheKey);
+    if (cachedRaw) {
+      try {
+        const parsed = JSON.parse(cachedRaw);
+        if (parsed && parsed.columns) {
+          resetBoard(parsed);
+        }
+      } catch {
+        resetBoard(emptyBoardData);
+      }
+    } else {
+      resetBoard(emptyBoardData);
+    }
+
     setIsLoadingBoard(true);
 
     fetchBoard(user, activeProjectId)
       .then((data) => {
         if (data && data.columns) {
           resetBoard(data);
-          localStorage.setItem(`kanban_board_${user}_${activeProjectId}`, JSON.stringify(data));
+          localStorage.setItem(cacheKey, JSON.stringify(data));
         }
       })
       .finally(() => {
@@ -160,13 +177,13 @@ export const KanbanBoard = () => {
 
   const persistBoard = useCallback(
     async (nextBoard: BoardData) => {
-      if (!user) return;
+      if (!user || !activeProjectId) return;
       localStorage.setItem(
-        `kanban_board_${user}_${activeProjectId || "default"}`,
+        `kanban_board_${user}_${activeProjectId}`,
         JSON.stringify(nextBoard)
       );
       setIsSyncing(true);
-      await saveBoard(user, nextBoard, activeProjectId || undefined);
+      await saveBoard(user, nextBoard, activeProjectId);
       setIsSyncing(false);
     },
     [user, activeProjectId]
@@ -356,6 +373,7 @@ export const KanbanBoard = () => {
     localStorage.removeItem("pm_auth_token");
     setProjects([]);
     setActiveProjectId(null);
+    resetBoard(emptyBoardData);
     setUser(null);
   };
 
@@ -488,21 +506,24 @@ export const KanbanBoard = () => {
   const handleResetBoard = async () => {
     try {
       const activeUser = user || "user";
-      const response = await fetch(getApiUrl(`/api/board/reset?username=${encodeURIComponent(activeUser)}`), { method: "POST" });
+      const response = await fetch(
+        getApiUrl(`/api/board/reset?username=${encodeURIComponent(activeUser)}${activeProjectId ? `&project_id=${encodeURIComponent(activeProjectId)}` : ""}`),
+        { method: "POST" }
+      );
       if (response.ok) {
         const data = await response.json();
-        setBoard(data);
-        if (user) {
-          localStorage.setItem(`kanban_board_${user}`, JSON.stringify(data));
+        resetBoard(data);
+        if (user && activeProjectId) {
+          localStorage.setItem(`kanban_board_${user}_${activeProjectId}`, JSON.stringify(data));
         }
         return;
       }
     } catch {
       // Fallback reset
     }
-    setBoard(initialData);
-    if (user) {
-      localStorage.setItem(`kanban_board_${user}`, JSON.stringify(initialData));
+    resetBoard(initialData);
+    if (user && activeProjectId) {
+      localStorage.setItem(`kanban_board_${user}_${activeProjectId}`, JSON.stringify(initialData));
     }
   };
 

@@ -22,6 +22,17 @@ export type BoardData = {
   cards: Record<string, Card>;
 };
 
+export const emptyBoardData: BoardData = {
+  columns: [
+    { id: "col-backlog", title: "Backlog", cardIds: [] },
+    { id: "col-discovery", title: "Discovery", cardIds: [] },
+    { id: "col-progress", title: "In Progress", cardIds: [] },
+    { id: "col-review", title: "Review", cardIds: [] },
+    { id: "col-done", title: "Done", cardIds: [] },
+  ],
+  cards: {},
+};
+
 export const initialData: BoardData = {
   columns: [
     { id: "col-backlog", title: "Backlog", cardIds: ["card-1", "card-2"] },
