@@ -527,9 +527,9 @@ export const KanbanBoard = () => {
     } catch {
       // Fallback reset
     }
-    resetBoard(initialData);
+    resetBoard(emptyBoardData);
     if (user && activeProjectId) {
-      localStorage.setItem(`kanban_board_${user}_${activeProjectId}`, JSON.stringify(initialData));
+      localStorage.setItem(`kanban_board_${user}_${activeProjectId}`, JSON.stringify(emptyBoardData));
     }
   };
 

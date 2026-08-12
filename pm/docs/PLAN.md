@@ -3776,3 +3776,549 @@ The requirement is:
 > **"Make the database the source of truth and ensure every authenticated user's changes persist correctly across refreshes, restarts, and future logins without leaking or restoring another user's data."**
 
 Start by inspecting the repository and tracing the complete data lifecycle. Then identify the root cause before making changes.
+
+
+# Part 31 — Fix Data Persistence, User Isolation & Data Resurrection
+
+## Objective
+
+Fix all critical bugs related to **board persistence, card/column CRUD operations, user-specific data, authentication, localStorage, default/demo data, and stale state**.
+
+**Parts 1–30 are already completed. Do NOT unnecessarily rewrite or break existing functionality.**
+
+First inspect the existing implementation and identify the root causes. Then implement only the fixes required for Part 31.
+
+---
+
+## 🔍 Investigation
+
+* [ ] Inspect the complete frontend → API → backend → database data flow.
+* [ ] Inspect `database.py`, `main.py`, frontend API utilities, `KanbanBoard.tsx`, authentication, localStorage, seed logic, and relevant tests.
+* [ ] Trace login → user identification → board retrieval → mutation → database → subsequent login.
+* [ ] Identify every place where board/card/column data can be created, modified, deleted, restored, or cached.
+* [ ] Identify the exact reasons deleted data is returning.
+* [ ] Identify the exact reasons changes are not surviving logout/login.
+* [ ] Identify whether stale localStorage data can overwrite fresh server data.
+* [ ] Identify whether default/demo data is being reseeded automatically.
+* [ ] Identify whether SQLite/Render persistence could cause data loss after backend restart.
+
+---
+
+# 🐛 Critical Persistence Fixes
+
+## Empty Board Persistence
+
+* [ ] Fix the logic where an empty board is rejected instead of being saved.
+* [ ] An empty board must be treated as valid persisted state.
+* [ ] Clearing all columns/cards must actually update the database.
+* [ ] `columns = []` and an empty card collection must persist correctly.
+* [ ] Refreshing after clearing must keep the board empty.
+* [ ] Logging out and logging back in must keep the board empty.
+* [ ] Do NOT restore the previous board when an empty board is intentionally saved.
+
+### Required flow
+
+```text
+Clear Board
+→ Save empty state
+→ Database updated
+→ Fetch board
+→ Empty board returned
+→ Refresh
+→ Still empty
+→ Logout/Login
+→ Still empty
+```
+
+---
+
+# 🌱 Default / Demo Data Fix
+
+* [ ] Inspect every call to `seed_default_board()`.
+* [ ] Remove automatic seeding from normal board retrieval.
+* [ ] Remove automatic seeding from normal board saving.
+* [ ] Remove automatic seeding from normal project retrieval where inappropriate.
+* [ ] Default data must NOT be recreated every time a user requests their board.
+* [ ] Deleted demo data must NOT magically return.
+* [ ] A user's board should only be initialized when the user/project genuinely requires initial data.
+* [ ] Existing user data must NEVER be overwritten by seed/default data.
+* [ ] Demo user must use the same persistence system as normal users.
+* [ ] Demo user modifications must persist exactly like normal users.
+
+### Required behavior
+
+```text
+Demo User
+→ Delete sample cards
+→ Save
+→ Logout
+→ Login
+→ Deleted cards remain deleted
+```
+
+---
+
+# 💾 Database as Source of Truth
+
+* [ ] Make the database the authoritative source for persisted board state.
+* [ ] React state must not be treated as permanent storage.
+* [ ] localStorage must not be treated as the authoritative database.
+* [ ] Stale localStorage must never overwrite newer server data.
+* [ ] After authentication, fetch the current server state.
+* [ ] Ensure cached state is properly scoped to the authenticated user/project.
+* [ ] Prevent stale cached data from resurrecting deleted cards or boards.
+
+---
+
+# ➕ Add Card Persistence
+
+* [ ] Verify the complete add-card flow.
+* [ ] Ensure the card is actually persisted to the database.
+* [ ] Await the database/API operation.
+* [ ] Handle API failure correctly.
+* [ ] Refresh after adding and confirm the card remains.
+* [ ] Logout/login and confirm the card remains.
+
+### Required test
+
+```text
+Add Card
+→ Database contains card
+→ Refresh
+→ Card still exists
+→ Logout/Login
+→ Card still exists
+```
+
+---
+
+# ✏️ Edit Card Persistence
+
+* [ ] Verify card title editing.
+* [ ] Verify card description editing.
+* [ ] Verify every editable card property.
+* [ ] Ensure edits are persisted to the database.
+* [ ] Ensure failed saves are reported instead of silently ignored.
+* [ ] Refresh and verify edits remain.
+* [ ] Logout/login and verify edits remain.
+
+---
+
+# 🗑️ Delete Card Persistence
+
+* [ ] Verify the delete-card API.
+* [ ] Verify the database actually deletes the card.
+* [ ] Do not rely only on frontend state.
+* [ ] Do not rely only on localStorage.
+* [ ] Verify the API response before considering the deletion successful.
+* [ ] Refresh after deletion and verify the card remains deleted.
+* [ ] Logout/login and verify the card remains deleted.
+
+### Required test
+
+```text
+Delete Card
+→ Database no longer contains card
+→ Fetch board
+→ Card is gone
+→ Refresh
+→ Card remains gone
+→ Logout/Login
+→ Card remains gone
+```
+
+---
+
+# 🧹 Clear Board Persistence
+
+* [ ] Fix the complete clear-board flow.
+* [ ] Ensure clearing the board sends a valid empty state to the backend.
+* [ ] Ensure the backend actually stores the empty state.
+* [ ] Ensure the old board is not returned as a fallback.
+* [ ] Refresh and verify the board remains empty.
+* [ ] Logout/login and verify the board remains empty.
+
+---
+
+# ↔️ Drag-and-Drop Persistence
+
+* [ ] Verify moving cards between columns.
+* [ ] Verify card order persistence.
+* [ ] Verify column order persistence.
+* [ ] Ensure drag-and-drop changes reach the database.
+* [ ] Ensure the database response is handled correctly.
+* [ ] Refresh and verify the exact order/location remains.
+* [ ] Logout/login and verify the state remains.
+
+---
+
+# 📋 Column Persistence
+
+* [ ] Add column persists.
+* [ ] Rename column persists.
+* [ ] Delete column persists.
+* [ ] Reorder column persists.
+* [ ] Clearing columns persists.
+* [ ] Refresh preserves column state.
+* [ ] Logout/login preserves column state.
+
+---
+
+# 🔐 Authentication & User Isolation
+
+* [ ] Inspect the complete authentication flow.
+* [ ] Ensure the backend derives the authenticated user from a trusted session/token.
+* [ ] Do NOT trust a frontend-supplied `userId` as the sole authentication mechanism.
+* [ ] Remove unsafe fallback behavior such as silently using `"user"` when authentication fails.
+* [ ] Invalid/missing authentication must return an appropriate `401 Unauthorized`.
+* [ ] Verify every board query belongs to the authenticated user.
+* [ ] Verify every project query belongs to the authenticated user.
+* [ ] Verify every card mutation belongs to the authenticated user's project.
+* [ ] Verify every column mutation belongs to the authenticated user's project.
+* [ ] Prevent one user from accessing another user's data.
+
+---
+
+# 👥 Multi-User Testing
+
+Create/test at least:
+
+```text
+User A
+User B
+Demo User
+```
+
+### User A
+
+* [ ] Create unique cards.
+* [ ] Edit cards.
+* [ ] Move cards.
+* [ ] Delete cards.
+* [ ] Clear board.
+* [ ] Logout/login.
+* [ ] Verify all changes persist.
+
+### User B
+
+* [ ] Create completely different cards.
+* [ ] Edit cards.
+* [ ] Move cards.
+* [ ] Delete cards.
+* [ ] Logout/login.
+* [ ] Verify all changes persist.
+
+### Isolation
+
+* [ ] User A cannot see User B's data.
+* [ ] User B cannot see User A's data.
+* [ ] User A cannot modify User B's data.
+* [ ] User B cannot modify User A's data.
+* [ ] Deleting User A's card does not affect User B.
+* [ ] Clearing User A's board does not affect User B.
+
+---
+
+# 🆔 Unique IDs
+
+* [ ] Inspect board IDs.
+* [ ] Inspect project IDs.
+* [ ] Inspect column IDs.
+* [ ] Inspect card IDs.
+* [ ] Ensure IDs are properly unique where required by the database schema.
+* [ ] Do not intentionally reuse the same primary-key IDs between users.
+* [ ] Preserve existing relationships while fixing ID generation.
+* [ ] Add migration logic only if genuinely required.
+
+---
+
+# 🗄️ Database Ownership
+
+Every mutation must verify ownership.
+
+### Required authorization chain
+
+```text
+Authenticated User
+        ↓
+User has access to Project
+        ↓
+Project owns Board
+        ↓
+Board owns Column
+        ↓
+Column owns Card
+        ↓
+Mutation allowed
+```
+
+* [ ] GET operations enforce ownership.
+* [ ] POST operations enforce ownership.
+* [ ] PUT operations enforce ownership.
+* [ ] DELETE operations enforce ownership.
+* [ ] Never rely solely on IDs supplied by the frontend.
+
+---
+
+# 📦 localStorage Audit
+
+* [ ] Search the entire frontend for `localStorage`.
+* [ ] Identify every stored board/project value.
+* [ ] Identify when values are written.
+* [ ] Identify when values are read.
+* [ ] Ensure stale data cannot overwrite server state.
+* [ ] Ensure logout cannot cause one user's cached state to appear for another user.
+* [ ] Ensure cache keys are properly scoped by user/project if localStorage remains.
+* [ ] Remove localStorage authentication fallbacks where they bypass the backend.
+
+---
+
+# 🚨 Error Handling
+
+* [ ] Audit all database operations.
+* [ ] Audit all API calls.
+* [ ] Ensure async database operations are awaited.
+* [ ] Do not silently swallow errors.
+* [ ] Do not display a successful UI state when persistence failed.
+* [ ] Return appropriate HTTP status codes.
+* [ ] Handle failed persistence on the frontend.
+* [ ] Log useful server-side errors.
+* [ ] Ensure the user can distinguish a real empty board from a database failure.
+
+---
+
+# 🔄 Avoid Duplicate Persistence
+
+Inspect flows such as:
+
+```text
+DELETE /cards/:id
++
+PUT /board
+```
+
+* [ ] Determine the authoritative persistence strategy.
+* [ ] Avoid unnecessary competing mutations.
+* [ ] Ensure card deletion cannot race against board saving.
+* [ ] Ensure the final database state is deterministic.
+* [ ] Ensure all CRUD operations follow a consistent persistence architecture.
+
+---
+
+# 🌐 Caching / Next.js
+
+* [ ] Inspect `fetch()` caching.
+* [ ] Inspect `cache`.
+* [ ] Inspect `revalidate`.
+* [ ] Inspect `no-store`.
+* [ ] Inspect route handlers/server actions.
+* [ ] Inspect React Query/SWR if present.
+* [ ] Inspect router caching.
+* [ ] Ensure authenticated board data is not incorrectly cached across users.
+* [ ] Ensure fresh data is retrieved after mutations.
+* [ ] Ensure stale cached state cannot resurrect deleted data.
+
+---
+
+# ☁️ Render / SQLite
+
+* [ ] Inspect the deployment configuration.
+* [ ] Determine where `pm.db` is stored in production.
+* [ ] Verify whether the Render filesystem is persistent for the SQLite database.
+* [ ] Verify what happens after backend restart.
+* [ ] Verify what happens after deployment/redeploy.
+* [ ] Ensure legitimate user data does not disappear because of ephemeral storage.
+
+---
+
+# 🧪 Required Tests
+
+Add or update tests for:
+
+* [ ] Create card persistence.
+* [ ] Edit card persistence.
+* [ ] Delete card persistence.
+* [ ] Clear board persistence.
+* [ ] Add column persistence.
+* [ ] Rename column persistence.
+* [ ] Delete column persistence.
+* [ ] Move card persistence.
+* [ ] Reorder persistence.
+* [ ] Logout/login persistence.
+* [ ] Refresh persistence.
+* [ ] Demo user persistence.
+* [ ] Deleted demo data does not return.
+* [ ] User A/User B isolation.
+* [ ] Unauthorized access rejection.
+* [ ] Backend restart persistence where applicable.
+* [ ] Stale localStorage cannot overwrite server state.
+
+---
+
+# 🧪 Final Manual Verification
+
+Perform an actual end-to-end test.
+
+## Demo User
+
+* [ ] Login.
+* [ ] Add a card.
+* [ ] Edit the card.
+* [ ] Move the card.
+* [ ] Delete the card.
+* [ ] Clear the board.
+* [ ] Refresh.
+* [ ] Logout.
+* [ ] Login again.
+* [ ] Verify the exact final state is preserved.
+
+## User A
+
+* [ ] Login.
+* [ ] Create unique data.
+* [ ] Modify data.
+* [ ] Delete data.
+* [ ] Move/reorder data.
+* [ ] Logout.
+* [ ] Login again.
+* [ ] Verify everything persists.
+
+## User B
+
+* [ ] Login.
+* [ ] Create completely different data.
+* [ ] Verify User A's data is invisible.
+* [ ] Modify User B's data.
+* [ ] Logout/login.
+* [ ] Verify persistence.
+
+---
+
+# 🗃️ Verify the Actual Database
+
+Do NOT consider the task complete just because the UI looks correct.
+
+After important operations, verify the actual database state.
+
+### Example
+
+```text
+Before:
+Card A exists
+
+DELETE Card A
+
+After:
+Card A does NOT exist in database
+```
+
+### Clear Board
+
+```text
+Before:
+columns = [...]
+cards = {...}
+
+CLEAR
+
+After:
+columns = []
+cards = {}
+```
+
+Then perform a fresh GET request and confirm the API returns the same state that is actually stored.
+
+---
+
+# 🚫 DO NOT FIX THIS WITH CHEATS
+
+Do NOT:
+
+* [ ] Force page reloads to hide the bug.
+* [ ] Clear localStorage as a fake fix.
+* [ ] Recreate default data after deletion.
+* [ ] Add arbitrary `setTimeout()` delays.
+* [ ] Add duplicate state systems.
+* [ ] Hardcode special persistence behavior for the demo user.
+* [ ] Hide API/database errors.
+* [ ] Make deleted cards disappear visually without deleting them from the database.
+* [ ] Rewrite unrelated working features.
+* [ ] Declare success without verifying the database.
+
+---
+
+# ✅ Definition of Done
+
+Part 31 is complete ONLY when all of these are true:
+
+* [ ] Add card persists.
+* [ ] Edit card persists.
+* [ ] Delete card persists.
+* [ ] Move card persists.
+* [ ] Reorder persists.
+* [ ] Add column persists.
+* [ ] Rename column persists.
+* [ ] Delete column persists.
+* [ ] Clear board persists.
+* [ ] Empty board remains empty.
+* [ ] Refresh preserves state.
+* [ ] Logout/login preserves state.
+* [ ] Demo user changes persist.
+* [ ] Deleted demo data does not return.
+* [ ] Default data is not automatically reseeded.
+* [ ] User A is isolated from User B.
+* [ ] Backend authentication cannot be bypassed with arbitrary user IDs.
+* [ ] Database operations properly handle failures.
+* [ ] localStorage cannot overwrite newer server state.
+* [ ] SQLite deployment persistence has been verified.
+* [ ] Automated persistence tests pass.
+* [ ] Manual end-to-end tests pass.
+* [ ] Existing Part 1–30 functionality remains intact.
+
+---
+
+## Final Report
+
+After implementation, report:
+
+### Root Cause
+
+Explain exactly why the old/deleted data was returning.
+
+### Files Changed
+
+List every modified file and why.
+
+### Database Changes
+
+Explain the persistence changes.
+
+### Authentication Changes
+
+Explain the user-isolation changes.
+
+### Demo User Changes
+
+Explain why demo data was returning and how it was fixed.
+
+### localStorage Changes
+
+Explain whether stale client-side state was involved.
+
+### Deployment Changes
+
+Explain whether SQLite/Render persistence required changes.
+
+### Tests
+
+List all tests executed and their results.
+
+### Verification
+
+Explicitly confirm every checkbox in the Definition of Done.
+
+**Do not say "fixed" unless the database itself has been verified after mutations and after a fresh logout/login.**
+
+The database must be the source of truth. Deleted data must stay deleted. Empty boards must stay empty. User A's data must stay User A's data. User B's data must stay User B's data.
+
+Humanity has suffered enough from zombie cards. Kill them properly.

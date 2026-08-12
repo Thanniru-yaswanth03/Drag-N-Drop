@@ -488,13 +488,24 @@ def get_projects(user_id: str = "user", db_path: Path = None):
 
 
 def create_project(user_id: str = "user", name: str = "New Project", db_path: Path = None):
-    seed_default_board(user_id, db_path)
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
 
     cursor.execute("SELECT id FROM users WHERE username = ?", (user_id,))
     user_row = cursor.fetchone()
-    internal_user_id = user_row["id"] if user_row else f"user-{user_id}"
+    if not user_row:
+        try:
+            cursor.execute(
+                "INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)",
+                (f"user-{user_id}", user_id, "password"),
+            )
+            internal_user_id = f"user-{user_id}"
+        except sqlite3.IntegrityError:
+            cursor.execute("SELECT id FROM users WHERE username = ?", (user_id,))
+            user_row = cursor.fetchone()
+            internal_user_id = user_row["id"] if user_row else f"user-{user_id}"
+    else:
+        internal_user_id = user_row["id"]
 
     project_id = f"board-{uuid.uuid4().hex[:8]}"
     cursor.execute(
@@ -703,7 +714,6 @@ def get_board(user_id: str = "user", db_path: Path = None, project_id: str = Non
 
 
 def save_board(user_id: str, board_data: dict, db_path: Path = None, project_id: str = None):
-    seed_default_board(user_id, db_path)
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
 
@@ -736,11 +746,6 @@ def save_board(user_id: str, board_data: dict, db_path: Path = None, project_id:
         board_id = board_row["id"]
 
     columns = board_data.get("columns", []) if isinstance(board_data, dict) else []
-    
-    # Don't overwrite whole board if payload is empty
-    if len(columns) == 0:
-        conn.close()
-        return get_board(user_id, db_path, project_id=project_id)
 
     # Delete existing columns and cards for clean state update
     cursor.execute("SELECT id FROM columns WHERE board_id = ?", (board_id,))
@@ -1007,7 +1012,7 @@ def get_user_role(project_id: str, username: str, db_path: Path = None) -> str:
     cursor.execute("SELECT user_id FROM boards WHERE id = ?", (project_id,))
     b_row = cursor.fetchone()
     if b_row:
-        if b_row["user_id"] in (user_id, username) or (username in ("user", "testuser") and b_row["user_id"] in ("user", "testuser", f"user-{username}")):
+        if b_row["user_id"] in (user_id, username, f"user-{username}") or (username in ("user", "testuser") and b_row["user_id"] in ("user", "testuser")):
             conn.close()
             return "owner"
     elif username in ("user", "testuser"):

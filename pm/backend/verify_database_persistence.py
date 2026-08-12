@@ -88,6 +88,25 @@ def test_database_persistence():
     assert "non-existent-card-id" not in saved["cards"], "Phantom card was created for missing card ID!"
     print("[OK] Confirmed save_board skips missing/deleted cards and DOES NOT create phantom cards!")
 
+    # 10. Test Empty Board Persistence (clearing all columns and cards)
+    empty_payload = {"columns": [], "cards": {}}
+    empty_saved = database.save_board(user_a, empty_payload, db_path=db_path)
+    assert len(empty_saved["columns"]) == 0 and len(empty_saved["cards"]) == 0, "Empty board save failed!"
+    print("[OK] Saved empty board (0 columns, 0 cards) to SQLite database!")
+
+    # Verify directly via SQL
+    cursor.execute("SELECT id FROM columns WHERE board_id = (SELECT id FROM boards WHERE user_id = (SELECT id FROM users WHERE username = ?))", (user_a,))
+    sql_cols = cursor.fetchall()
+    assert len(sql_cols) == 0, "Columns still exist in SQLite table after clearing board!"
+    print("[OK] Confirmed SQLite 'columns' table has 0 rows for User Alpha!")
+
+    # Re-authenticate User Alpha and fetch board again
+    database.revoke_session(auth_a["token"], db_path=db_path)
+    auth_a_empty = database.authenticate_user("user_alpha", "password123", db_path=db_path)
+    relogin_empty_board = database.get_board(user_a, db_path=db_path)
+    assert len(relogin_empty_board["columns"]) == 0 and len(relogin_empty_board["cards"]) == 0, "Empty board reverted or seeded default columns on re-login!"
+    print("[OK] Confirmed empty board PERSISTS across fresh re-login (0 columns, 0 cards)!")
+
     conn.close()
     if db_path.exists():
         db_path.unlink()
