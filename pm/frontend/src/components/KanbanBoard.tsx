@@ -433,24 +433,30 @@ export const KanbanBoard = () => {
     persistBoard(nextBoard);
   };
 
-  const handleDeleteCard = (columnId: string, cardId: string) => {
-    deleteCardApi(cardId, user || "user");
-    const nextBoard = {
-      ...board,
-      cards: Object.fromEntries(
-        Object.entries(board.cards).filter(([id]) => id !== cardId)
-      ),
-      columns: board.columns.map((column) =>
-        column.id === columnId
-          ? {
-              ...column,
-              cardIds: column.cardIds.filter((id) => id !== cardId),
-            }
-          : column
-      ),
+  const handleDeleteCard = async (columnId: string, cardId: string) => {
+    const nextCards = Object.fromEntries(
+      Object.entries(board.cards).filter(([id]) => id !== cardId)
+    );
+    const nextColumns = board.columns.map((column) => ({
+      ...column,
+      cardIds: column.cardIds.filter((id) => id !== cardId),
+    }));
+    const nextBoard: BoardData = {
+      columns: nextColumns,
+      cards: nextCards,
     };
+
     setBoard(nextBoard);
-    persistBoard(nextBoard);
+
+    if (user && activeProjectId) {
+      localStorage.setItem(
+        `kanban_board_${user}_${activeProjectId}`,
+        JSON.stringify(nextBoard)
+      );
+    }
+
+    await deleteCardApi(cardId, user || "user");
+    await persistBoard(nextBoard);
   };
 
   const handleSaveCard = async (

@@ -82,6 +82,12 @@ def test_database_persistence():
     assert "card-alpha-special" not in fresh_board_a["cards"], "Deleted card resurrected after re-login!"
     print("[OK] Verified fresh database fetch after re-login contains NO resurrected cards!")
 
+    # 9. Test save_board with omitted/deleted card to ensure NO phantom recreation
+    fresh_board_a["columns"][0]["cardIds"].append("non-existent-card-id")
+    saved = database.save_board(user_a, fresh_board_a, db_path=db_path)
+    assert "non-existent-card-id" not in saved["cards"], "Phantom card was created for missing card ID!"
+    print("[OK] Confirmed save_board skips missing/deleted cards and DOES NOT create phantom cards!")
+
     conn.close()
     if db_path.exists():
         db_path.unlink()

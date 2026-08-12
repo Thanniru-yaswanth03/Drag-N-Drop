@@ -780,9 +780,11 @@ def save_board(user_id: str, board_data: dict, db_path: Path = None, project_id:
         card_ids = col.get("cardIds", []) if isinstance(col.get("cardIds"), list) else []
         for card_pos, card_id in enumerate(card_ids):
             card_id_str = str(card_id)
-            card_data = cards_map.get(card_id_str, {"id": card_id_str, "title": "Untitled", "details": ""})
+            if card_id_str not in cards_map:
+                continue
+            card_data = cards_map[card_id_str]
             if not isinstance(card_data, dict):
-                card_data = {"id": card_id_str, "title": str(card_data), "details": ""}
+                continue
             
             c_title = str(card_data.get("title", "Untitled"))
             c_details = str(card_data.get("details") or card_data.get("description") or "")
