@@ -76,12 +76,19 @@ export async function registerApi(username: string, password: string) {
   }
 }
 
+function checkUnauthorized(response: Response) {
+  if (response.status === 401 && typeof localStorage !== "undefined") {
+    localStorage.removeItem("pm_auth_token");
+  }
+}
+
 export async function fetchProjects(username: string = "user"): Promise<Project[]> {
   try {
     const response = await fetch(
       getApiUrl(`/api/projects?username=${encodeURIComponent(username)}`),
       { headers: getAuthFetchHeaders() }
     );
+    checkUnauthorized(response);
     if (!response.ok) {
       throw new Error(`Failed to fetch projects: ${response.statusText}`);
     }
@@ -165,6 +172,7 @@ export async function fetchBoard(
     const response = await fetch(getApiUrl(path), {
       headers: getAuthFetchHeaders(),
     });
+    checkUnauthorized(response);
     if (!response.ok) {
       throw new Error(`Failed to fetch board: ${response.statusText}`);
     }
@@ -194,6 +202,7 @@ export async function saveBoard(
       headers: getAuthHeaders(),
       body: JSON.stringify(boardData),
     });
+    checkUnauthorized(response);
     return response.ok;
   } catch (error) {
     console.error("Error saving board:", error);
