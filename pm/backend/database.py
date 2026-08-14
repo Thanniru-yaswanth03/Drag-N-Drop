@@ -162,6 +162,37 @@ def init_db(db_path: Path = None):
     conn.commit()
     conn.close()
 
+    ensure_default_user(db_path)
+
+
+def ensure_default_user(db_path: Path = None):
+    if db_path is not None and db_path != DB_PATH:
+        return
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, password_hash, password_salt FROM users WHERE username = ?", ("user",))
+    row = cursor.fetchone()
+
+    salt = secrets.token_hex(16)
+    expected_hash = hash_password("password", salt)
+
+    if not row:
+        user_id = "user-user"
+        cursor.execute(
+            "INSERT INTO users (id, username, password_hash, password_salt) VALUES (?, ?, ?, ?)",
+            (user_id, "user", expected_hash, salt),
+        )
+    else:
+        user_salt = row["password_salt"] or "legacy"
+        if not verify_password("password", row["password_hash"], user_salt):
+            cursor.execute(
+                "UPDATE users SET password_hash = ?, password_salt = ? WHERE username = ?",
+                (expected_hash, salt, "user"),
+            )
+    conn.commit()
+    conn.close()
+    seed_default_board("user", db_path=db_path)
+
 
 def create_session(username: str, db_path: Path = None) -> dict:
     conn = get_db_connection(db_path)
@@ -309,9 +340,10 @@ def seed_default_board(user_id: str = "user", db_path: Path = None):
     if not user_row:
         try:
             _salt = secrets.token_hex(16)
+            default_pw = "password" if user_id in ("user", "testuser") else secrets.token_hex(16)
             cursor.execute(
                 "INSERT INTO users (id, username, password_hash, password_salt) VALUES (?, ?, ?, ?)",
-                (f"user-{user_id}", user_id, hash_password(secrets.token_hex(16), _salt), _salt),
+                (f"user-{user_id}", user_id, hash_password(default_pw, _salt), _salt),
             )
             internal_user_id = f"user-{user_id}"
         except sqlite3.IntegrityError:
