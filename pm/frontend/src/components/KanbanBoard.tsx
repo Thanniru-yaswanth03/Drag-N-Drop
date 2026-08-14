@@ -169,7 +169,7 @@ export const KanbanBoard = () => {
     if (cachedRaw) {
       try {
         const parsed = JSON.parse(cachedRaw);
-        if (parsed && parsed.columns && parsed.columns.length > 0) {
+        if (parsed && parsed.columns && Array.isArray(parsed.columns)) {
           resetBoard(parsed);
           loadedFromCache = true;
         }
@@ -179,23 +179,23 @@ export const KanbanBoard = () => {
     }
 
     if (!loadedFromCache) {
-      resetBoard(initialData);
+      resetBoard(emptyBoardData);
     }
 
     setIsLoadingBoard(true);
 
     fetchBoard(user, activeProjectId)
       .then((data) => {
-        if (data && data.columns && data.columns.length > 0) {
+        if (data && data.columns && Array.isArray(data.columns) && data.columns.length > 0) {
           resetBoard(data);
           localStorage.setItem(cacheKey, JSON.stringify(data));
         } else if (!loadedFromCache) {
-          resetBoard(initialData);
-          localStorage.setItem(cacheKey, JSON.stringify(initialData));
+          resetBoard(emptyBoardData);
+          localStorage.setItem(cacheKey, JSON.stringify(emptyBoardData));
         }
       })
       .catch(() => {
-        // Keeps cached/initial state on network error
+        // Keeps cached state on network error
       })
       .finally(() => {
         setIsLoadingBoard(false);

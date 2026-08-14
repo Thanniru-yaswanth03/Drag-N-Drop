@@ -229,6 +229,7 @@ export async function createCardApi(
       headers: getAuthHeaders(),
       body: JSON.stringify({ columnId, title, details, ...extraFields }),
     });
+    checkUnauthorized(response);
     if (response.ok) {
       const data = await response.json();
       return data.card;
@@ -259,6 +260,7 @@ export async function updateCardApi(
       headers: getAuthHeaders(),
       body: JSON.stringify(cardData),
     });
+    checkUnauthorized(response);
     if (response.ok) {
       const data = await response.json();
       return data.card;
@@ -276,6 +278,7 @@ export async function deleteCardApi(cardId: string, username: string = "user") {
       method: "DELETE",
       headers: getAuthFetchHeaders(),
     });
+    checkUnauthorized(response);
     return response.ok;
   } catch (error) {
     console.error("Error deleting card via API:", error);
