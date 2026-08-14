@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, List, Optional, Any
+import secrets
 import time
 from fastapi import FastAPI, HTTPException, status, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
@@ -14,7 +15,6 @@ from websocket_manager import ws_manager
 
 from fastapi.middleware.cors import CORSMiddleware
 
-database.init_db()
 
 
 @asynccontextmanager
@@ -310,7 +310,7 @@ def reset_board(request: Request, username: Optional[str] = None):
 @app.post("/api/cards")
 def create_card(payload: CardCreateRequest, request: Request, username: Optional[str] = None):
     auth_user = get_authenticated_user(request)
-    card_id = payload.cardId or f"card-{Path().resolve().stat().st_mtime_ns}"
+    card_id = payload.cardId or f"card-{secrets.token_hex(8)}"
     card = database.add_card(
         user_id=auth_user,
         column_id=payload.columnId,
@@ -377,9 +377,8 @@ async def ai_chat_endpoint(payload: AIChatRequest, request: Request, username: O
     return result
 
 
-@app.get("/api/activity-log")
 @app.get("/api/projects/{project_id}/activity")
-def get_activity_log(project_id: str, request: Request, username: Optional[str] = None, limit: int = 50, offset: int = 0):
+def get_activity_log(project_id: str, request: Request, limit: int = 50, offset: int = 0):
     auth_user = get_authenticated_user(request)
     safe_limit = min(max(1, limit), 100)
     if not database.check_user_permission(project_id, auth_user, "viewer"):

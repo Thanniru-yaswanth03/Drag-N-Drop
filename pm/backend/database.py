@@ -166,15 +166,16 @@ def init_db(db_path: Path = None):
 def create_session(username: str, db_path: Path = None) -> dict:
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
-    
+
     username_clean = username.strip().lower()
     cursor.execute("SELECT id FROM users WHERE LOWER(username) = ?", (username_clean,))
     row = cursor.fetchone()
     if not row:
         user_id = f"user-{uuid.uuid4().hex[:8]}"
+        _salt = secrets.token_hex(16)
         cursor.execute(
-            "INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)",
-            (user_id, username_clean, hash_password("password")),
+            "INSERT INTO users (id, username, password_hash, password_salt) VALUES (?, ?, ?, ?)",
+            (user_id, username_clean, hash_password(secrets.token_hex(16), _salt), _salt),
         )
     else:
         user_id = row["id"]
@@ -186,7 +187,7 @@ def create_session(username: str, db_path: Path = None) -> dict:
     )
     conn.commit()
     conn.close()
-    
+
     return {
         "success": True,
         "user": username_clean,
@@ -307,9 +308,10 @@ def seed_default_board(user_id: str = "user", db_path: Path = None):
     user_row = cursor.fetchone()
     if not user_row:
         try:
+            _salt = secrets.token_hex(16)
             cursor.execute(
-                "INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)",
-                (f"user-{user_id}", user_id, "password"),
+                "INSERT INTO users (id, username, password_hash, password_salt) VALUES (?, ?, ?, ?)",
+                (f"user-{user_id}", user_id, hash_password(secrets.token_hex(16), _salt), _salt),
             )
             internal_user_id = f"user-{user_id}"
         except sqlite3.IntegrityError:
@@ -496,9 +498,10 @@ def create_project(user_id: str = "user", name: str = "New Project", db_path: Pa
     user_row = cursor.fetchone()
     if not user_row:
         try:
+            _salt = secrets.token_hex(16)
             cursor.execute(
-                "INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)",
-                (f"user-{user_id}", user_id, "password"),
+                "INSERT INTO users (id, username, password_hash, password_salt) VALUES (?, ?, ?, ?)",
+                (f"user-{user_id}", user_id, hash_password(secrets.token_hex(16), _salt), _salt),
             )
             internal_user_id = f"user-{user_id}"
         except sqlite3.IntegrityError:
@@ -622,6 +625,7 @@ def get_board(user_id: str = "user", db_path: Path = None, project_id: str = Non
     user_row = cursor.fetchone()
     internal_user_id = user_row["id"] if user_row else f"user-{user_id}"
 
+    board_id = None
     if project_id and isinstance(project_id, str):
         cursor.execute(
             "SELECT id FROM boards WHERE id = ? AND user_id = ?",
@@ -641,17 +645,13 @@ def get_board(user_id: str = "user", db_path: Path = None, project_id: str = Non
     else:
         cursor.execute("SELECT id FROM boards WHERE user_id = ? ORDER BY created_at ASC", (internal_user_id,))
         board_row = cursor.fetchone()
+        if board_row:
+            board_id = board_row["id"]
 
-    if not board_row:
+    if not board_id:
         conn.close()
         return {"columns": [], "cards": {}}
     
-    board_id = board_row["id"]
-    if not board_row:
-        conn.close()
-        return {"columns": [], "cards": {}}
-    
-    board_id = board_row["id"]
 
     cursor.execute(
         "SELECT id, title, position FROM columns WHERE board_id = ? ORDER BY position ASC",
@@ -999,7 +999,7 @@ ROLE_HIERARCHY = {
 
 def get_user_role(project_id: str, username: str, db_path: Path = None) -> str:
     if not project_id or not username:
-        return "owner"
+        return "none"
 
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
@@ -1108,9 +1108,10 @@ def add_project_member(project_id: str, target_username: str, role: str, request
     t_user = cursor.fetchone()
     if not t_user:
         t_id = f"user-{uuid.uuid4().hex[:8]}"
+        _salt = secrets.token_hex(16)
         cursor.execute(
-            "INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?)",
-            (t_id, target_clean, hash_password("password")),
+            "INSERT INTO users (id, username, password_hash, password_salt) VALUES (?, ?, ?, ?)",
+            (t_id, target_clean, hash_password(secrets.token_hex(16), _salt), _salt),
         )
         target_user_id = t_id
     else:

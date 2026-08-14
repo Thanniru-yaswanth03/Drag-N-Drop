@@ -4322,3 +4322,675 @@ Explicitly confirm every checkbox in the Definition of Done.
 The database must be the source of truth. Deleted data must stay deleted. Empty boards must stay empty. User A's data must stay User A's data. User B's data must stay User B's data.
 
 Humanity has suffered enough from zombie cards. Kill them properly.
+# Part 32 — Complete Persistence, Deletion & Demo Authentication Fix
+
+**Repository:** `https://github.com/Thanniru-yaswanth03/Drag-N-Drop`
+
+## Objective
+
+Fix the remaining **critical data persistence, card deletion, default-card recreation, and demo-user authentication issues** in the entire application.
+
+The current behavior is unacceptable for production:
+
+* Newly created cards are sometimes persisted and sometimes disappear.
+* Deleted cards reappear after refresh/login.
+* Default/demo cards cannot be permanently deleted.
+* The demo user login is currently unreliable or broken.
+* Changes made during one session can disappear later.
+* The frontend can appear to successfully mutate data while the backend/database still contains the old state.
+* Refreshing or logging back in can restore stale/default data.
+
+Do **not** implement superficial frontend fixes. Find the actual root causes across the complete frontend → API → backend → SQLite persistence flow.
+
+---
+
+## 1. 🔍 Perform a Complete Root-Cause Audit
+
+Before changing code:
+
+* [ ] Inspect the entire repository.
+* [ ] Inspect `pm/backend/main.py`.
+* [ ] Inspect `pm/backend/database.py`.
+* [ ] Inspect authentication/session logic.
+* [ ] Inspect all card CRUD endpoints.
+* [ ] Inspect project/board initialization logic.
+* [ ] Inspect default/demo card creation logic.
+* [ ] Inspect frontend API client code.
+* [ ] Inspect `KanbanBoard` and all card mutation handlers.
+* [ ] Inspect login/logout/session hydration.
+* [ ] Inspect WebSocket synchronization.
+* [ ] Inspect undo/redo behavior.
+* [ ] Inspect SQLite initialization, migrations, transactions and commits.
+* [ ] Inspect existing persistence/security tests.
+* [ ] Inspect `pm.db` handling and deployment configuration.
+* [ ] Inspect Render/Docker database path configuration.
+* [ ] Inspect whether multiple SQLite database files/paths can accidentally be created.
+* [ ] Inspect every place where cards/projects are inserted automatically.
+
+Do not assume the README is correct. Verify the implementation.
+
+---
+
+# 2. 💾 Fix Card Persistence Completely
+
+Every card mutation must have a reliable persistence path:
+
+```text
+User action
+   ↓
+React state update
+   ↓
+API request
+   ↓
+FastAPI endpoint
+   ↓
+SQLite transaction
+   ↓
+COMMIT
+   ↓
+successful API response
+   ↓
+frontend state synchronization
+```
+
+For:
+
+* [ ] Create card
+* [ ] Edit card
+* [ ] Delete card
+* [ ] Move card
+* [ ] Reorder cards
+* [ ] Change card status/column
+* [ ] Change card priority
+* [ ] Change card metadata
+* [ ] Project switching
+
+Verify that the database is actually updated before treating the operation as successful.
+
+Do not rely on frontend state or localStorage as the source of truth if the application is designed around the backend database.
+
+---
+
+# 3. 🗑️ Fix Card Deletion
+
+Deleting a card must permanently delete it from the database.
+
+Investigate and fix:
+
+* [ ] DELETE endpoint behavior.
+* [ ] Card ID handling.
+* [ ] Project ID validation.
+* [ ] User/session validation.
+* [ ] RBAC permissions.
+* [ ] SQLite DELETE query.
+* [ ] Transaction handling.
+* [ ] Explicit database commit.
+* [ ] Frontend API request.
+* [ ] Frontend optimistic updates.
+* [ ] WebSocket events.
+* [ ] Refetch/hydration after deletion.
+* [ ] Any stale React state that can recreate deleted cards.
+
+After a successful delete:
+
+```text
+Database → card does not exist
+Frontend → card does not exist
+Refresh → card does not exist
+Logout → card does not exist
+Login → card does not exist
+```
+
+The card must remain deleted.
+
+---
+
+# 4. 🚨 Fix Default/Demo Cards Reappearing
+
+This is especially important.
+
+Find every piece of code that creates default cards, seed cards, demo cards, sample cards, or initial board data.
+
+Determine why deleted default cards are being recreated.
+
+Do NOT simply disable all initialization.
+
+Correct behavior:
+
+### First initialization
+
+A new/demo user's board may receive its initial default cards.
+
+### After that
+
+Those cards must behave exactly like normal persisted cards.
+
+If the user deletes a default card:
+
+```text
+DELETE card
+↓
+SQLite confirms deletion
+↓
+Card remains deleted
+↓
+Refresh
+↓
+Card remains deleted
+↓
+Logout
+↓
+Login
+↓
+Card remains deleted
+```
+
+Default data must **never be blindly reseeded on every login, refresh, project hydration, or API call.**
+
+Use an appropriate initialization mechanism such as:
+
+* database-level existence checks,
+* one-time seed markers,
+* project initialization state,
+* deterministic seed IDs,
+* or another robust mechanism already compatible with the architecture.
+
+Do not use hacks based on frontend state.
+
+---
+
+# 5. 🔐 Fix Demo User Authentication
+
+The demo user login is currently broken/unreliable.
+
+Trace the complete authentication flow:
+
+```text
+Login form
+↓
+Frontend API request
+↓
+Backend authentication
+↓
+Password verification
+↓
+Session creation
+↓
+Session token storage
+↓
+Authenticated API requests
+↓
+User/project hydration
+```
+
+Verify:
+
+* [ ] Demo user actually exists.
+* [ ] Demo password is valid.
+* [ ] Password hashing/verification works.
+* [ ] Login endpoint returns the expected session information.
+* [ ] Session token is stored correctly.
+* [ ] `Authorization: Bearer ...` handling works.
+* [ ] `X-Session-Token` handling works if required.
+* [ ] Session survives page refresh.
+* [ ] Session is correctly invalidated only on logout/expiration.
+* [ ] Frontend does not accidentally overwrite/remove the session.
+* [ ] Demo user has the correct project/board.
+* [ ] Demo user has the correct RBAC permissions.
+* [ ] Login does not trigger destructive board reinitialization.
+
+Do not hardcode a frontend-only demo login.
+
+The demo account must authenticate against the real backend/database.
+
+---
+
+# 6. 🔄 Fix Frontend ↔ Backend State Synchronization
+
+Find every place where frontend state can diverge from the database.
+
+Pay particular attention to:
+
+* optimistic updates,
+* failed API requests,
+* stale closures,
+* race conditions,
+* duplicate requests,
+* asynchronous state updates,
+* project switching,
+* refresh hydration,
+* WebSocket updates,
+* undo/redo,
+* React effects,
+* automatic refetches.
+
+A failed backend mutation must **not** leave the UI pretending the mutation succeeded.
+
+Preferred behavior:
+
+```text
+Mutation requested
+↓
+API succeeds
+↓
+Update/confirm frontend state
+
+OR
+
+API fails
+↓
+Rollback/refetch authoritative state
+↓
+Show error
+```
+
+Do not silently swallow failed persistence requests.
+
+---
+
+# 7. ⚡ Investigate Race Conditions
+
+The intermittent nature of the bug strongly suggests possible asynchronous/race-condition behavior.
+
+Look specifically for situations such as:
+
+```text
+Create Card A
+↓
+Update local state
+
+Delete Card B
+↓
+Update local state
+
+Refetch old board
+↓
+Old server state overwrites newer local state
+```
+
+or:
+
+```text
+Mutation 1 starts
+Mutation 2 starts
+Mutation 2 finishes first
+Mutation 1 finishes later
+↓
+Older state overwrites newer state
+```
+
+Prevent stale requests from overwriting newer authoritative state.
+
+Where necessary:
+
+* [ ] serialize dependent mutations,
+* [ ] await mutation requests,
+* [ ] use functional React state updates,
+* [ ] invalidate/refetch after mutations,
+* [ ] add request sequencing/versioning,
+* [ ] reject stale WebSocket events,
+* [ ] ensure database transactions are atomic.
+
+---
+
+# 8. 🗄️ SQLite Persistence Audit
+
+Inspect the database implementation carefully.
+
+Verify:
+
+* [ ] Correct database file path.
+* [ ] Same database path is used everywhere.
+* [ ] No accidental relative-path database duplication.
+* [ ] SQLite WAL configuration is correct.
+* [ ] Connections are handled safely.
+* [ ] Transactions are committed.
+* [ ] Rollbacks occur on failures.
+* [ ] Connections are closed correctly.
+* [ ] Concurrent requests cannot corrupt logical state.
+* [ ] DELETE/INSERT/UPDATE operations are actually committed.
+* [ ] Database initialization does not recreate existing data.
+* [ ] Startup logic does not reseed existing users/projects/cards.
+* [ ] Deployment does not accidentally point the application to a different empty database.
+
+IMPORTANT:
+
+If the current Render deployment uses an ephemeral filesystem, explicitly determine whether SQLite data can survive server/container restarts or redeployments.
+
+Do not claim SQLite is persistent in production unless the deployment storage actually guarantees it.
+
+If infrastructure is part of the persistence problem, document the limitation clearly and fix the application configuration where possible.
+
+---
+
+# 9. 🌱 Seed/Initialization Logic
+
+Audit all startup and initialization functions.
+
+They must be **idempotent**.
+
+Running initialization:
+
+```text
+1 time
+10 times
+100 times
+```
+
+must produce the same database state after the first successful initialization.
+
+Initialization must never:
+
+* recreate deleted cards,
+* duplicate cards,
+* overwrite user changes,
+* reset projects,
+* reset demo-user data,
+* restore deleted default cards.
+
+Use stable IDs/unique constraints/existence checks where appropriate.
+
+---
+
+# 10. 🔒 Preserve RBAC and Security
+
+While fixing persistence, do NOT weaken authorization.
+
+Every mutation must still verify:
+
+```text
+authenticated user
++
+valid session
++
+project membership
++
+required role/permission
++
+target resource ownership/scope
+```
+
+A persistence fix that allows arbitrary users to delete or modify other users' cards is NOT a fix.
+
+Test at minimum:
+
+* [ ] owner
+* [ ] admin
+* [ ] member
+* [ ] viewer
+* [ ] unauthenticated user
+* [ ] invalid session
+* [ ] user attempting to access another user's project/card
+
+---
+
+# 11. 🧪 Add Regression Tests
+
+Create tests specifically reproducing the reported bugs.
+
+### Test A — Create persistence
+
+```text
+Login
+Create card
+Verify API success
+Verify database contains card
+Refresh
+Verify card exists
+Logout
+Login
+Verify card still exists
+```
+
+### Test B — Delete persistence
+
+```text
+Login
+Delete card
+Verify API success
+Verify database does not contain card
+Refresh
+Verify card does not exist
+Logout
+Login
+Verify card does not exist
+```
+
+### Test C — Default card deletion
+
+```text
+Login as demo user
+Identify default card
+Delete default card
+Refresh
+Verify deleted card does not return
+Logout
+Login again
+Verify deleted card does not return
+```
+
+### Test D — Repeated mutations
+
+```text
+Create 10 cards
+Delete 5 cards
+Move remaining cards
+Refresh
+Login again
+Verify exact final state
+```
+
+### Test E — Failed mutation
+
+Simulate API/database failure.
+
+Verify:
+
+```text
+Backend failure
+↓
+Frontend does not permanently pretend mutation succeeded
+↓
+Authoritative state is restored
+```
+
+### Test F — Demo login
+
+```text
+Logout
+Login with valid demo credentials
+Verify successful authentication
+Verify session
+Verify board loading
+Verify existing persisted state
+```
+
+### Test G — Initialization idempotency
+
+Run application initialization multiple times.
+
+Verify:
+
+* no duplicate cards,
+* no recreated deleted cards,
+* no overwritten user changes.
+
+---
+
+# 12. 🧪 Run the Existing Test Suite
+
+Run all existing tests before and after the fix.
+
+At minimum:
+
+```bash
+pytest
+npm test
+npm run test
+npx playwright test
+```
+
+Use the commands actually defined by the repository rather than blindly executing commands that do not exist.
+
+Also run:
+
+```bash
+npm run build
+```
+
+and the backend/frontend lint/type checks if configured.
+
+Do not stop at "tests passed" if the tests do not actually cover the reported persistence behavior.
+
+---
+
+# 13. 🧪 Manual End-to-End Verification
+
+After implementation, manually reproduce the exact real-world scenario.
+
+### Demo account
+
+1. Login with demo credentials.
+2. Record the initial cards.
+3. Create a new card.
+4. Edit it.
+5. Move it.
+6. Delete another card.
+7. Delete a default card.
+8. Refresh.
+9. Verify every change.
+10. Logout.
+11. Login again.
+12. Verify every change again.
+13. Close/reopen the browser.
+14. Login again.
+15. Verify the final state.
+
+Then repeat the same test several times.
+
+The bug is intermittent, so one successful test is NOT sufficient.
+
+---
+
+# 14. 🚫 Do NOT Do These Things
+
+Do not:
+
+* [ ] Hide the problem with localStorage.
+* [ ] Recreate deleted cards on refresh.
+* [ ] Hardcode the board state in React.
+* [ ] Disable authentication.
+* [ ] Bypass RBAC.
+* [ ] Automatically reset the demo account.
+* [ ] Ignore failed API requests.
+* [ ] Add arbitrary `setTimeout()` calls as a fake race-condition fix.
+* [ ] Add random retries without understanding the failure.
+* [ ] Delete existing tests.
+* [ ] Rewrite unrelated architecture.
+* [ ] Claim persistence is fixed without verifying the database.
+* [ ] Mark Part 31 complete merely because the frontend appears correct.
+
+---
+
+# 15. 📊 Add Diagnostic Logging Where Necessary
+
+During development/testing, add useful structured logging around:
+
+```text
+AUTH
+SESSION
+PROJECT LOAD
+CARD CREATE
+CARD UPDATE
+CARD DELETE
+DATABASE TRANSACTION
+DATABASE COMMIT
+DATABASE ROLLBACK
+SEED/INITIALIZATION
+WEBSOCKET SYNC
+```
+
+For example, when deleting a card, the backend should make it possible to determine:
+
+```text
+user_id
+project_id
+card_id
+permission result
+DELETE query result
+commit result
+```
+
+Do not log passwords, session tokens, or other secrets.
+
+Remove or reduce noisy debugging logs before finalizing production code.
+
+---
+
+# 16. 🧠 Determine the Actual Root Cause
+
+At the end of the investigation, explicitly document:
+
+### Root Cause
+
+* What caused new cards to sometimes disappear?
+* Why were deleted cards returning?
+* Why were default cards being recreated?
+* Why did demo authentication stop working?
+* Was the problem frontend state, API requests, backend logic, SQLite transactions, initialization, deployment storage, WebSockets, or a combination?
+
+### Fix
+
+Explain exactly what was changed.
+
+### Verification
+
+Show the tests proving:
+
+```text
+CREATE → persists
+UPDATE → persists
+MOVE → persists
+DELETE → stays deleted
+DEFAULT DELETE → stays deleted
+LOGIN → works
+REFRESH → preserves state
+LOGOUT/LOGIN → preserves state
+RESTART → preserves state where infrastructure supports persistence
+```
+
+---
+
+# 17. ✅ Completion Criteria
+
+Do NOT mark Part 31 complete until all of these are true:
+
+* [ ] New cards reliably persist.
+* [ ] Edited cards reliably persist.
+* [ ] Moved cards reliably persist.
+* [ ] Deleted cards stay deleted.
+* [ ] Default cards can be deleted.
+* [ ] Deleted default cards do not reappear.
+* [ ] Demo login works reliably.
+* [ ] Login does not reset board state.
+* [ ] Refresh does not reset board state.
+* [ ] Logout/login does not reset board state.
+* [ ] Initialization is idempotent.
+* [ ] Frontend and backend state remain synchronized.
+* [ ] Failed mutations are handled correctly.
+* [ ] RBAC remains enforced.
+* [ ] Existing tests still pass.
+* [ ] New regression tests pass.
+* [ ] Production build succeeds.
+* [ ] Deployment/database persistence behavior is explicitly verified.
+* [ ] No unrelated architecture was unnecessarily rewritten.
+
+## Final Requirement
+
+**Do not just patch symptoms. Find and eliminate the underlying source of truth/persistence problem.**
+
+Before making changes, inspect the current implementation and explain the likely root cause.
+
+After making changes, run the tests and manually reproduce the exact create/delete/login/refresh workflow.
+
+Only then report Part 31 as complete.

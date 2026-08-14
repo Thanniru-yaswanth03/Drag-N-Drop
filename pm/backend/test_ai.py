@@ -13,12 +13,15 @@ def test_ai_test_endpoint():
 
 
 def test_ai_chat_endpoint_mock_addition():
+    import database
+    sess = database.create_session("user")["token"]
     response = client.post(
-        "/api/ai/chat?username=user",
+        "/api/ai/chat",
         json={
             "message": "Add a card for QA testing to In Progress",
             "history": [],
         },
+        headers={"Authorization": f"Bearer {sess}"},
     )
     assert response.status_code == 200
     data = response.json()

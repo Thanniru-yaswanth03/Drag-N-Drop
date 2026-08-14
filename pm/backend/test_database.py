@@ -10,11 +10,17 @@ TEST_DB_PATH = Path(__file__).resolve().parent / "test_pm.db"
 @pytest.fixture(autouse=True)
 def setup_test_db():
     if TEST_DB_PATH.exists():
-        TEST_DB_PATH.unlink()
+        try:
+            TEST_DB_PATH.unlink()
+        except Exception:
+            pass
     database.init_db(TEST_DB_PATH)
     yield
     if TEST_DB_PATH.exists():
-        TEST_DB_PATH.unlink()
+        try:
+            TEST_DB_PATH.unlink()
+        except Exception:
+            pass
 
 
 def test_init_and_seed_db():

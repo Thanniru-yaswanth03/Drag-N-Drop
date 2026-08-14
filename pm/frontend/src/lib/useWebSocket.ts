@@ -17,11 +17,26 @@ export function useWebSocket({ projectId, username, onMessage }: UseWebSocketOpt
     if (!projectId || !username) return;
 
     setStatus("connecting");
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.host;
+    const envUrl = process.env.NEXT_PUBLIC_API_URL;
+    let wsHost = window.location.host;
+    let wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+
+    if (envUrl) {
+      const cleanEnv = envUrl.replace(/\/$/, "");
+      if (cleanEnv.startsWith("https://")) {
+        wsProtocol = "wss:";
+        wsHost = cleanEnv.replace("https://", "");
+      } else if (cleanEnv.startsWith("http://")) {
+        wsProtocol = "ws:";
+        wsHost = cleanEnv.replace("http://", "");
+      }
+    } else if (typeof window !== "undefined" && window.location.port !== "8000" && window.location.protocol.startsWith("http")) {
+      wsHost = "127.0.0.1:8000";
+    }
+
     const token = typeof localStorage !== "undefined" ? localStorage.getItem("pm_auth_token") : null;
     const tokenParam = token ? `?token=${encodeURIComponent(token)}` : "";
-    const url = `${protocol}//${host}/ws/projects/${encodeURIComponent(projectId)}${tokenParam}`;
+    const url = `${wsProtocol}//${wsHost}/ws/projects/${encodeURIComponent(projectId)}${tokenParam}`;
 
     try {
       const ws = new WebSocket(url);
