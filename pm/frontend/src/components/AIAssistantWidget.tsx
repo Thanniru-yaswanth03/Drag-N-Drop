@@ -19,6 +19,7 @@ type AIAssistantWidgetProps = {
 
 function localSmartNLP(userMessage: string, boardData: BoardData): { reply: string; board_update: BoardData | null } {
   const lower = userMessage.toLowerCase().trim();
+  const isQuestion = lower.includes("?") || /^(how|why|what|where|who|can|could|explain|is|are)/i.test(lower);
   const columns = boardData.columns || [];
   const cards = { ...(boardData.cards || {}) };
 
@@ -44,7 +45,7 @@ function localSmartNLP(userMessage: string, boardData: BoardData): { reply: stri
   };
 
   // Intent: CLEAR / DELETE / REMOVE / ADD / MOVE
-  if (lower.includes("clear") || lower.includes("delete") || lower.includes("remove") || lower.includes("wipe")) {
+  if (!isQuestion && (lower.includes("clear") || lower.includes("delete") || lower.includes("remove") || lower.includes("wipe"))) {
     const targetCol = matchColumn(lower);
     if (targetCol) {
       const removedIds = new Set(targetCol.cardIds);
@@ -57,7 +58,8 @@ function localSmartNLP(userMessage: string, boardData: BoardData): { reply: stri
     }
   }
 
-  if (lower.includes("add") || lower.includes("create")) {
+  const isExplicitAdd = lower.startsWith("add") || lower.startsWith("create") || lower.includes("add task") || lower.includes("create task") || lower.includes("add card") || lower.includes("create card");
+  if (!isQuestion && isExplicitAdd) {
     const match = userMessage.match(/(?:add|create)\s+(?:task|card)?\s*['"]?([^'"]+)['"]?/i);
     const title = match ? match[1].trim() : "New Task";
     const targetCol = matchColumn(lower) || columns[0];

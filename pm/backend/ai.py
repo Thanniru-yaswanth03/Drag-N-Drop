@@ -265,7 +265,9 @@ def smart_local_nlp(user_message: str, board_data: dict) -> dict:
             }
 
     # Intent 4: ADD / CREATE / NEW
-    if any(k in lower for k in ["add", "create", "new task", "insert", "add card", "create card"]):
+    is_question = "?" in lower or any(lower.startswith(w) for w in ["how", "why", "what", "where", "who", "can", "could", "explain", "is", "are"])
+    is_explicit_add = lower.startswith("add") or lower.startswith("create") or any(k in lower for k in ["add task", "create task", "add card", "create card", "insert task", "insert card"])
+    if not is_question and is_explicit_add:
         target_col = match_column(lower) or columns[0]
         raw = re.sub(r"(add|create|new|insert|a card|task|for|to|in progress|backlog|done|review|discovery)", "", lower, flags=re.IGNORECASE).strip()
         title = raw.title() if len(raw) > 1 else "New AI Task"
