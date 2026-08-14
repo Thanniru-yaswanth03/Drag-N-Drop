@@ -33,6 +33,42 @@ export const emptyBoardData: BoardData = {
   cards: {},
 };
 
+export function sanitizeBoardData(boardData: BoardData): BoardData {
+  if (!boardData || !boardData.columns || !Array.isArray(boardData.columns)) {
+    return emptyBoardData;
+  }
+  const validCards: Record<string, Card> = {};
+  const rawCards = boardData.cards || {};
+
+  for (const [id, card] of Object.entries(rawCards)) {
+    if (card && card.id && card.title) {
+      validCards[id] = card;
+    }
+  }
+
+  const seenCardIds = new Set<string>();
+  const cleanColumns = boardData.columns.map((col) => {
+    const cleanCardIds: string[] = [];
+    const rawIds = Array.isArray(col.cardIds) ? col.cardIds : [];
+    for (const cid of rawIds) {
+      if (validCards[cid] && !seenCardIds.has(cid)) {
+        seenCardIds.add(cid);
+        cleanCardIds.push(cid);
+      }
+    }
+    return {
+      ...col,
+      cardIds: cleanCardIds,
+    };
+  });
+
+  return {
+    ...boardData,
+    columns: cleanColumns,
+    cards: validCards,
+  };
+}
+
 export const initialData: BoardData = {
   columns: [
     { id: "col-backlog", title: "Backlog", cardIds: ["card-1", "card-2"] },

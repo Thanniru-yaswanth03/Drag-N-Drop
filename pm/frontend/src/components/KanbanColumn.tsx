@@ -13,6 +13,7 @@ type KanbanColumnProps = {
   onAddCard: (columnId: string, title: string, details: string) => void;
   onDeleteCard: (columnId: string, cardId: string) => void;
   onEditCard?: (card: Card) => void;
+  onClearColumn?: (columnId: string) => void;
 };
 
 const columnAccents: Record<string, { gradient: string; text: string }> = {
@@ -31,6 +32,7 @@ export const KanbanColumn = memo(
     onAddCard,
     onDeleteCard,
     onEditCard,
+    onClearColumn,
   }: KanbanColumnProps) => {
     const { setNodeRef, isOver } = useDroppable({ id: column.id });
     const accent = columnAccents[column.id] || { gradient: "from-blue-500 to-indigo-500", text: "text-blue-500" };
@@ -53,6 +55,17 @@ export const KanbanColumn = memo(
                   {cards.length} {cards.length === 1 ? "task" : "tasks"}
                 </span>
               </div>
+              {cards.length > 0 && onClearColumn && (
+                <button
+                  type="button"
+                  onClick={() => onClearColumn(column.id)}
+                  className="text-[10px] font-bold uppercase tracking-wider text-[var(--gray-text)] hover:text-red-500 transition px-2 py-0.5 rounded-md hover:bg-red-500/10"
+                  title="Clear all tasks in this column"
+                  aria-label={`Clear ${column.title} column`}
+                >
+                  Clear All
+                </button>
+              )}
             </div>
             <input
               value={column.title}

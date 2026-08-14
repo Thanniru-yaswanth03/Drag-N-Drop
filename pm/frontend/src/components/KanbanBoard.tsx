@@ -472,6 +472,24 @@ export const KanbanBoard = () => {
     await persistBoard(nextBoard);
   };
 
+  const handleClearColumn = async (columnId: string) => {
+    const targetCol = board.columns.find((c) => c.id === columnId);
+    if (!targetCol) return;
+    const removedIds = new Set(targetCol.cardIds);
+    const nextCards = Object.fromEntries(
+      Object.entries(board.cards).filter(([id]) => !removedIds.has(id))
+    );
+    const nextColumns = board.columns.map((column) =>
+      column.id === columnId ? { ...column, cardIds: [] } : column
+    );
+    const nextBoard: BoardData = {
+      columns: nextColumns,
+      cards: nextCards,
+    };
+    setBoard(nextBoard);
+    await persistBoard(nextBoard);
+  };
+
   const handleSaveCard = async (
     cardId: string,
     title: string,
@@ -769,6 +787,7 @@ export const KanbanBoard = () => {
                   onAddCard={handleAddCard}
                   onDeleteCard={handleDeleteCard}
                   onEditCard={(card) => setEditingCard(card)}
+                  onClearColumn={handleClearColumn}
                 />
               </div>
             ))}
