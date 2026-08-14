@@ -189,12 +189,9 @@ export const KanbanBoard = () => {
 
     fetchBoard(user, activeProjectId)
       .then((data) => {
-        if (data && data.columns && Array.isArray(data.columns) && data.columns.length > 0) {
+        if (!loadedFromCache && data && data.columns && Array.isArray(data.columns) && data.columns.length > 0) {
           resetBoard(data);
           localStorage.setItem(cacheKey, JSON.stringify(data));
-        } else if (!loadedFromCache) {
-          resetBoard(emptyBoardData);
-          localStorage.setItem(cacheKey, JSON.stringify(emptyBoardData));
         }
       })
       .catch(() => {
@@ -211,11 +208,12 @@ export const KanbanBoard = () => {
 
   const persistBoard = useCallback(
     async (nextBoard: BoardData) => {
-      if (!user || !activeProjectId) return;
-      const cacheKey = `kanban_board_${user}_${activeProjectId}`;
+      const activeUser = user || "user";
+      const activeProj = activeProjectId || `board-${activeUser}`;
+      const cacheKey = `kanban_board_${activeUser}_${activeProj}`;
       localStorage.setItem(cacheKey, JSON.stringify(nextBoard));
       setIsSyncing(true);
-      await saveBoard(user, nextBoard, activeProjectId);
+      await saveBoard(activeUser, nextBoard, activeProj);
       setIsSyncing(false);
     },
     [user, activeProjectId]
@@ -256,15 +254,18 @@ export const KanbanBoard = () => {
 
   const handleCreateProject = async (name: string) => {
     if (!user) return;
-    const newProj = await createProjectApi(user, name);
-    if (newProj && newProj.id) {
-      setProjects((prev) => {
-        const exists = prev.some((p) => p.id === newProj.id);
-        return exists ? prev : [...prev, newProj];
-      });
-      setActiveProjectId(newProj.id);
-      localStorage.setItem(`kanban_active_project_${user}`, newProj.id);
+    let newProj = await createProjectApi(user, name);
+    if (!newProj || !newProj.id) {
+      newProj = { id: `board-${Date.now().toString(36)}`, name };
     }
+    setProjects((prev) => {
+      const exists = prev.some((p) => p.id === newProj!.id);
+      const nextProjs = exists ? prev : [...prev, newProj!];
+      localStorage.setItem(`kanban_projects_${user}`, JSON.stringify(nextProjs));
+      return nextProjs;
+    });
+    setActiveProjectId(newProj.id);
+    localStorage.setItem(`kanban_active_project_${user}`, newProj.id);
   };
 
   const handleRenameProject = async (projId: string, name: string) => {
