@@ -30,8 +30,14 @@ export function useWebSocket({ projectId, username, onMessage }: UseWebSocketOpt
         wsProtocol = "ws:";
         wsHost = cleanEnv.replace("http://", "");
       }
-    } else if (typeof window !== "undefined" && window.location.port !== "8000" && window.location.protocol.startsWith("http")) {
-      wsHost = "127.0.0.1:8000";
+    } else if (typeof window !== "undefined") {
+      if ((window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") && window.location.protocol === "http:") {
+        wsHost = "127.0.0.1:8000";
+        wsProtocol = "ws:";
+      } else if (window.location.port !== "8000") {
+        wsHost = "drag-n-drop-28p3.onrender.com";
+        wsProtocol = "wss:";
+      }
     }
 
     const token = typeof localStorage !== "undefined" ? localStorage.getItem("pm_auth_token") : null;

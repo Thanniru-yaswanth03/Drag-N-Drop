@@ -14,9 +14,16 @@ export const getApiUrl = (path: string) => {
     return `${baseUrl}${path}`;
   }
   if (typeof window !== "undefined") {
-    if (window.location.port !== "8000" && window.location.protocol.startsWith("http")) {
+    if (
+      (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") &&
+      window.location.protocol === "http:"
+    ) {
       return `http://127.0.0.1:8000${path}`;
     }
+    if (window.location.port === "8000") {
+      return path;
+    }
+    return `https://drag-n-drop-28p3.onrender.com${path}`;
   }
   return path;
 };

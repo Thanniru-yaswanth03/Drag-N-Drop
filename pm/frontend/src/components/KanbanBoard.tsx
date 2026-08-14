@@ -114,7 +114,7 @@ export const KanbanBoard = () => {
     setIsAuthLoaded(true);
   }, []);
 
-  // Fetch user projects list on login
+  // Fetch user projects list on login with resilient localStorage fallback
   useEffect(() => {
     if (!user) {
       setProjects([]);
@@ -122,49 +122,80 @@ export const KanbanBoard = () => {
       return;
     }
 
+    const cacheProjsKey = `kanban_projects_${user}`;
+    const cachedProjsRaw = localStorage.getItem(cacheProjsKey);
+    let initialProjs: Project[] = [];
+    if (cachedProjsRaw) {
+      try {
+        initialProjs = JSON.parse(cachedProjsRaw);
+        if (Array.isArray(initialProjs) && initialProjs.length > 0) {
+          setProjects(initialProjs);
+          const savedActiveId = localStorage.getItem(`kanban_active_project_${user}`);
+          const found = initialProjs.find((p) => p.id === savedActiveId);
+          setActiveProjectId(found ? found.id : initialProjs[0].id);
+        }
+      } catch {
+        // Ignore cache parse error
+      }
+    }
+
     setIsLoadingBoard(true);
     fetchProjects(user).then((projs) => {
-      const safeProjs = Array.isArray(projs) ? projs : [];
-      setProjects(safeProjs);
+      const safeProjs = Array.isArray(projs) && projs.length > 0 ? projs : initialProjs;
       if (safeProjs.length > 0) {
+        setProjects(safeProjs);
+        localStorage.setItem(cacheProjsKey, JSON.stringify(safeProjs));
         const savedActiveId = localStorage.getItem(`kanban_active_project_${user}`);
         const found = safeProjs.find((p) => p.id === savedActiveId);
-        setActiveProjectId(found ? found.id : safeProjs[0].id);
+        setActiveProjectId((curr) => curr || (found ? found.id : safeProjs[0].id));
       } else {
-        setIsLoadingBoard(false);
+        const defaultProj: Project = { id: `board-${user}`, name: "Main Project" };
+        setProjects([defaultProj]);
+        setActiveProjectId(defaultProj.id);
+        localStorage.setItem(cacheProjsKey, JSON.stringify([defaultProj]));
       }
+      setIsLoadingBoard(false);
     });
   }, [user]);
 
-  // Fetch board data whenever active project changes
+  // Fetch board data whenever active project changes with instant cache hydration & default fallbacks
   useEffect(() => {
     if (!user || !activeProjectId) return;
     const cacheKey = `kanban_board_${user}_${activeProjectId}`;
     localStorage.setItem(`kanban_active_project_${user}`, activeProjectId);
 
-    // Try loading cached board for instant render without showing default cards
+    let loadedFromCache = false;
     const cachedRaw = localStorage.getItem(cacheKey);
     if (cachedRaw) {
       try {
         const parsed = JSON.parse(cachedRaw);
-        if (parsed && parsed.columns) {
+        if (parsed && parsed.columns && parsed.columns.length > 0) {
           resetBoard(parsed);
+          loadedFromCache = true;
         }
       } catch {
-        resetBoard(emptyBoardData);
+        // Ignore parse error
       }
-    } else {
-      resetBoard(emptyBoardData);
+    }
+
+    if (!loadedFromCache) {
+      resetBoard(initialData);
     }
 
     setIsLoadingBoard(true);
 
     fetchBoard(user, activeProjectId)
       .then((data) => {
-        if (data && data.columns) {
+        if (data && data.columns && data.columns.length > 0) {
           resetBoard(data);
           localStorage.setItem(cacheKey, JSON.stringify(data));
+        } else if (!loadedFromCache) {
+          resetBoard(initialData);
+          localStorage.setItem(cacheKey, JSON.stringify(initialData));
         }
+      })
+      .catch(() => {
+        // Keeps cached/initial state on network error
       })
       .finally(() => {
         setIsLoadingBoard(false);
@@ -178,10 +209,8 @@ export const KanbanBoard = () => {
   const persistBoard = useCallback(
     async (nextBoard: BoardData) => {
       if (!user || !activeProjectId) return;
-      localStorage.setItem(
-        `kanban_board_${user}_${activeProjectId}`,
-        JSON.stringify(nextBoard)
-      );
+      const cacheKey = `kanban_board_${user}_${activeProjectId}`;
+      localStorage.setItem(cacheKey, JSON.stringify(nextBoard));
       setIsSyncing(true);
       await saveBoard(user, nextBoard, activeProjectId);
       setIsSyncing(false);
