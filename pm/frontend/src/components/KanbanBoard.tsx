@@ -163,7 +163,7 @@ export const KanbanBoard = () => {
     };
   }, [resetBoard]);
 
-  // Fetch user projects list on login with resilient localStorage fallback
+  // Fetch user projects list on login
   useEffect(() => {
     if (!user) {
       setProjects([]);
@@ -171,37 +171,15 @@ export const KanbanBoard = () => {
       return;
     }
 
-    const cacheProjsKey = `kanban_projects_${user}`;
-    const cachedProjsRaw = localStorage.getItem(cacheProjsKey);
-    let initialProjs: Project[] = [];
-    if (cachedProjsRaw) {
-      try {
-        initialProjs = JSON.parse(cachedProjsRaw);
-        if (Array.isArray(initialProjs) && initialProjs.length > 0) {
-          setProjects(initialProjs);
-          const savedActiveId = localStorage.getItem(`kanban_active_project_${user}`);
-          const found = initialProjs.find((p) => p.id === savedActiveId);
-          setActiveProjectId(found ? found.id : initialProjs[0].id);
-        }
-      } catch {
-        // Ignore cache parse error
-      }
-    }
-
     setIsLoadingBoard(true);
     fetchProjects(user)
       .then((projs) => {
-        if (Array.isArray(projs)) {
-          if (projs.length > 0) {
-            setProjects(projs);
-            localStorage.setItem(cacheProjsKey, JSON.stringify(projs));
-            const savedActiveId = localStorage.getItem(`kanban_active_project_${user}`);
-            const found = projs.find((p) => p.id === savedActiveId);
-            setActiveProjectId((curr) => (curr && projs.some((p) => p.id === curr) ? curr : (found ? found.id : projs[0].id)));
-          } else if (initialProjs.length === 0) {
-            setProjects([]);
-            setActiveProjectId(null);
-          }
+        if (Array.isArray(projs) && projs.length > 0) {
+          setProjects(projs);
+          setActiveProjectId((curr) => (curr && projs.some((p) => p.id === curr) ? curr : projs[0].id));
+        } else {
+          setProjects([]);
+          setActiveProjectId(null);
         }
         setIsLoadingBoard(false);
       })
@@ -211,30 +189,11 @@ export const KanbanBoard = () => {
       });
   }, [user]);
 
-  // Fetch board data whenever active project changes with instant cache hydration & default fallbacks
+  // Fetch board data whenever active project changes
   useEffect(() => {
     if (!user || !activeProjectId) return;
-    const cacheKey = `kanban_board_${user}_${activeProjectId}`;
-    localStorage.setItem(`kanban_active_project_${user}`, activeProjectId);
 
-    let loadedFromCache = false;
-    const cachedRaw = localStorage.getItem(cacheKey);
-    if (cachedRaw) {
-      try {
-        const parsed = JSON.parse(cachedRaw);
-        if (parsed && parsed.columns && Array.isArray(parsed.columns)) {
-          resetBoard(parsed);
-          loadedFromCache = true;
-        }
-      } catch {
-        // Ignore parse error
-      }
-    }
-
-    if (!loadedFromCache) {
-      resetBoard(emptyBoardData);
-    }
-
+    resetBoard(emptyBoardData);
     setIsLoadingBoard(true);
 
     fetchBoard(user, activeProjectId)
@@ -242,7 +201,6 @@ export const KanbanBoard = () => {
         // Backend is SINGLE SOURCE OF TRUTH: Always update state on valid DB response
         if (data && data.columns && Array.isArray(data.columns)) {
           resetBoard(data);
-          localStorage.setItem(cacheKey, JSON.stringify(data));
         }
       })
       .catch((err) => {
@@ -261,11 +219,12 @@ export const KanbanBoard = () => {
     async (nextBoard: BoardData) => {
       const activeUser = user || "user";
       const activeProj = activeProjectId || `board-${activeUser}`;
-      const cacheKey = `kanban_board_${activeUser}_${activeProj}`;
-      localStorage.setItem(cacheKey, JSON.stringify(nextBoard));
       setIsSyncing(true);
-      await saveBoard(activeUser, nextBoard, activeProj);
+      const success = await saveBoard(activeUser, nextBoard, activeProj);
       setIsSyncing(false);
+      if (!success) {
+        console.error("Failed to persist board to backend");
+      }
     },
     [user, activeProjectId]
   );
@@ -311,12 +270,9 @@ export const KanbanBoard = () => {
     }
     setProjects((prev) => {
       const exists = prev.some((p) => p.id === newProj!.id);
-      const nextProjs = exists ? prev : [...prev, newProj!];
-      localStorage.setItem(`kanban_projects_${user}`, JSON.stringify(nextProjs));
-      return nextProjs;
+      return exists ? prev : [...prev, newProj!];
     });
     setActiveProjectId(newProj.id);
-    localStorage.setItem(`kanban_active_project_${user}`, newProj.id);
   };
 
   const handleRenameProject = async (projId: string, name: string) => {
@@ -331,16 +287,12 @@ export const KanbanBoard = () => {
     if (!user) return;
     const ok = await deleteProjectApi(user, projId);
     if (ok) {
-      localStorage.removeItem(`kanban_board_${user}_${projId}`);
       const remaining = projects.filter((p) => p.id !== projId);
       setProjects(remaining);
-      localStorage.setItem(`kanban_projects_${user}`, JSON.stringify(remaining));
       if (remaining.length > 0) {
         setActiveProjectId(remaining[0].id);
-        localStorage.setItem(`kanban_active_project_${user}`, remaining[0].id);
       } else {
         setActiveProjectId(null);
-        localStorage.removeItem(`kanban_active_project_${user}`);
       }
     }
   };
@@ -580,9 +532,6 @@ export const KanbanBoard = () => {
     };
 
     setBoard(nextBoardData);
-    if (user && activeProjectId) {
-      localStorage.setItem(`kanban_board_${user}_${activeProjectId}`, JSON.stringify(nextBoardData));
-    }
     const res = await updateCardApi(
       cardId,
       {
@@ -617,18 +566,12 @@ export const KanbanBoard = () => {
       if (response.ok) {
         const data = await response.json();
         resetBoard(data);
-        if (activeProjectId) {
-          localStorage.setItem(`kanban_board_${user}_${activeProjectId}`, JSON.stringify(data));
-        }
         return;
       }
     } catch {
       // Fallback reset
     }
     resetBoard(emptyBoardData);
-    if (user && activeProjectId) {
-      localStorage.setItem(`kanban_board_${user}_${activeProjectId}`, JSON.stringify(emptyBoardData));
-    }
   };
 
   const handleBoardUpdateFromAI = (nextBoard: BoardData, notificationMessage?: string) => {

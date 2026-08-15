@@ -516,7 +516,7 @@ def get_projects(user_id: str = "user", db_path: Path = None):
     rows = cursor.fetchall()
     if not rows:
         conn.close()
-        seed_default_board(user_id, db_path=db_path)
+        create_project(user_id, name="Main Project", db_path=db_path)
         conn = get_db_connection(db_path)
         cursor = conn.cursor()
         cursor.execute(
@@ -789,7 +789,7 @@ def save_board(user_id: str, board_data: dict, db_path: Path = None, project_id:
         board_row = cursor.fetchone()
         if not board_row:
             conn.close()
-            seed_default_board(user_id, db_path=db_path)
+            create_project(user_id, name="Main Project", db_path=db_path)
             conn = get_db_connection(db_path)
             cursor = conn.cursor()
             cursor.execute("SELECT id FROM boards WHERE user_id = ? ORDER BY created_at ASC", (internal_user_id,))
@@ -1038,7 +1038,15 @@ def delete_card(card_id: str, user_id: str = "user", db_path: Path = None):
 
     cursor.execute("DELETE FROM cards WHERE id = ?", (card_id,))
     conn.commit()
+
+    # Empirical post-deletion verification
+    cursor.execute("SELECT id FROM cards WHERE id = ?", (card_id,))
+    check_row = cursor.fetchone()
     conn.close()
+
+    if check_row is not None:
+        raise RuntimeError(f"Database deletion failed for card {card_id}: record still exists after COMMIT")
+
     return True
 
 
