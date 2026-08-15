@@ -113,6 +113,7 @@ export async function createProjectApi(
       headers: getAuthHeaders(),
       body: JSON.stringify({ name }),
     });
+    checkUnauthorized(response);
     if (response.ok) {
       return await response.json();
     }
@@ -136,6 +137,7 @@ export async function updateProjectApi(
         body: JSON.stringify({ name }),
       }
     );
+    checkUnauthorized(response);
     if (response.ok) {
       return await response.json();
     }
@@ -157,6 +159,7 @@ export async function deleteProjectApi(
         headers: getAuthFetchHeaders(),
       }
     );
+    checkUnauthorized(response);
     return response.ok;
   } catch (error) {
     console.error("Error deleting project:", error);
@@ -355,6 +358,7 @@ export async function fetchProjectActivity(
       getApiUrl(`/api/projects/${encodeURIComponent(projectId)}/activity?username=${encodeURIComponent(username)}`),
       { headers: getAuthFetchHeaders() }
     );
+    checkUnauthorized(response);
     if (response.ok) {
       const data = await response.json();
       return data.activities || [];
@@ -382,6 +386,7 @@ export async function fetchProjectMembers(
       getApiUrl(`/api/projects/${encodeURIComponent(projectId)}/members?username=${encodeURIComponent(username)}`),
       { headers: getAuthFetchHeaders() }
     );
+    checkUnauthorized(response);
     if (response.ok) {
       const data = await response.json();
       return {
@@ -410,6 +415,7 @@ export async function addProjectMemberApi(
         body: JSON.stringify({ username: targetUsername, role }),
       }
     );
+    checkUnauthorized(response);
     const data = await response.json().catch(() => ({}));
     if (response.ok && data.success) {
       return { success: true, member: data };
@@ -436,6 +442,7 @@ export async function removeProjectMemberApi(
         headers: getAuthFetchHeaders(),
       }
     );
+    checkUnauthorized(response);
     const data = await response.json().catch(() => ({}));
     if (response.ok && data.success) {
       return { success: true };
@@ -465,6 +472,7 @@ export async function fetchNotificationsApi(
       getApiUrl(`/api/notifications?username=${encodeURIComponent(username)}`),
       { headers: getAuthFetchHeaders() }
     );
+    checkUnauthorized(response);
     if (response.ok) {
       const data = await response.json();
       return {
@@ -492,6 +500,7 @@ export async function markNotificationReadApi(
         headers: getAuthFetchHeaders(),
       }
     );
+    checkUnauthorized(response);
     return response.ok;
   } catch (error) {
     console.error("Error marking notification read:", error);
@@ -508,6 +517,7 @@ export async function markAllNotificationsReadApi(username: string = "user") {
         headers: getAuthHeaders(),
       }
     );
+    checkUnauthorized(response);
     return response.ok;
   } catch (error) {
     console.error("Error marking all read:", error);

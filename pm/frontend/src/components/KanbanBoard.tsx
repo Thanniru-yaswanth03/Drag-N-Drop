@@ -118,6 +118,10 @@ export const KanbanBoard = () => {
 
   useEffect(() => {
     const handleUnauthorized = () => {
+      if (typeof localStorage !== "undefined") {
+        localStorage.removeItem("pm_auth_token");
+        localStorage.removeItem("pm_auth_user");
+      }
       setUser(null);
       setProjects([]);
       setActiveProjectId(null);
@@ -161,9 +165,8 @@ export const KanbanBoard = () => {
         setIsAuthLoaded(true);
       });
     } else {
-      if (!storedToken) {
-        localStorage.removeItem("pm_auth_user");
-      }
+      localStorage.removeItem("pm_auth_user");
+      localStorage.removeItem("pm_auth_token");
       queueMicrotask(() => setIsAuthLoaded(true));
     }
 
@@ -580,12 +583,18 @@ export const KanbanBoard = () => {
     }
   };
 
+  const handleRegisterSuccess = useCallback((username: string) => {
+    setProjects([]);
+    setActiveProjectId(null);
+    setUser(username);
+  }, []);
+
   if (!isAuthLoaded) {
     return null;
   }
 
   if (!user) {
-    return <LoginForm onLogin={handleLogin} />;
+    return <LoginForm onLogin={handleLogin} onRegisterSuccess={handleRegisterSuccess} />;
   }
 
   const activeCard = activeCardId ? cardsById[activeCardId] : null;

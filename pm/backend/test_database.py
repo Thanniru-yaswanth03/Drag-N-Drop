@@ -9,6 +9,8 @@ TEST_DB_PATH = Path(__file__).resolve().parent / "test_pm.db"
 
 @pytest.fixture(autouse=True)
 def setup_test_db():
+    orig_db = database.DB_PATH
+    database.DB_PATH = TEST_DB_PATH
     if TEST_DB_PATH.exists():
         try:
             TEST_DB_PATH.unlink()
@@ -16,6 +18,7 @@ def setup_test_db():
             pass
     database.init_db(TEST_DB_PATH)
     yield
+    database.DB_PATH = orig_db
     if TEST_DB_PATH.exists():
         try:
             TEST_DB_PATH.unlink()

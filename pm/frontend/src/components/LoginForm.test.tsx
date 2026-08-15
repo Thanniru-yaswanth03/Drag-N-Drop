@@ -34,8 +34,9 @@ describe("LoginForm", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/invalid username or password/i);
   });
 
-  it("switches mode to Create Account on tab click", async () => {
-    render(<LoginForm onLogin={() => true} />);
+  it("switches mode to Create Account on tab click and calls onRegisterSuccess", async () => {
+    const onRegisterSuccess = vi.fn();
+    render(<LoginForm onLogin={() => true} onRegisterSuccess={onRegisterSuccess} />);
     const createTab = screen.getByRole("button", { name: "Create Account" });
     await userEvent.click(createTab);
 

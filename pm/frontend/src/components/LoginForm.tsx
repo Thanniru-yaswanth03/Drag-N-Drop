@@ -5,9 +5,10 @@ import { registerApi } from "@/lib/api";
 
 type LoginFormProps = {
   onLogin: (username: string, password: string) => Promise<boolean> | boolean;
+  onRegisterSuccess?: (username: string) => void;
 };
 
-export const LoginForm = ({ onLogin }: LoginFormProps) => {
+export const LoginForm = ({ onLogin, onRegisterSuccess }: LoginFormProps) => {
   const [isRegistering, setIsRegistering] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -36,11 +37,20 @@ export const LoginForm = ({ onLogin }: LoginFormProps) => {
         }
 
         const targetUser = regRes.user || cleanUser;
-        localStorage.setItem("pm_auth_user", targetUser);
-        const success = await onLogin(targetUser, password);
-        if (!success && regRes.token) {
-          // Registration already generated valid token, force reload to complete sign-in
-          window.location.reload();
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem("pm_auth_user", targetUser);
+          if (regRes.token) {
+            localStorage.setItem("pm_auth_token", regRes.token);
+          }
+        }
+
+        if (onRegisterSuccess) {
+          onRegisterSuccess(targetUser);
+        } else {
+          const success = await onLogin(targetUser, password);
+          if (!success && regRes.token && typeof window !== "undefined") {
+            window.location.reload();
+          }
         }
         return;
       }

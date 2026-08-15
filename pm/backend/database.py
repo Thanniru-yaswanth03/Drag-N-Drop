@@ -30,29 +30,14 @@ _in_init = False
 
 
 def get_db_connection(db_path: Path = None):
-    global _in_init
     target_path = db_path if db_path is not None else DB_PATH
     if hasattr(target_path, "parent") and not target_path.parent.exists():
         try:
             target_path.parent.mkdir(parents=True, exist_ok=True)
         except Exception:
             pass
-    conn = sqlite3.connect(target_path, timeout=15.0)
+    conn = sqlite3.connect(target_path, timeout=30.0)
     conn.row_factory = sqlite3.Row
-
-    if not _in_init:
-        try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
-            has_table = cursor.fetchone()
-            cursor.close()
-            if not has_table:
-                _in_init = True
-                init_db(target_path)
-                _in_init = False
-        except Exception:
-            _in_init = False
-
     return conn
 
 
@@ -331,22 +316,23 @@ def seed_default_board(user_id: str = "user", db_path: Path = None):
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
 
+    username_clean = user_id.strip().lower() if user_id else "user"
     # Check if user exists
-    cursor.execute("SELECT id FROM users WHERE username = ?", (user_id,))
+    cursor.execute("SELECT id FROM users WHERE LOWER(username) = ?", (username_clean,))
     user_row = cursor.fetchone()
     if not user_row:
         try:
             _salt = secrets.token_hex(16)
-            default_pw = "password" if user_id in ("user", "testuser") else secrets.token_hex(16)
+            default_pw = "password" if username_clean in ("user", "testuser") else secrets.token_hex(16)
             cursor.execute(
                 "INSERT INTO users (id, username, password_hash, password_salt) VALUES (?, ?, ?, ?)",
-                (f"user-{user_id}", user_id, hash_password(default_pw, _salt), _salt),
+                (f"user-{username_clean}", username_clean, hash_password(default_pw, _salt), _salt),
             )
-            internal_user_id = f"user-{user_id}"
+            internal_user_id = f"user-{username_clean}"
         except sqlite3.IntegrityError:
-            cursor.execute("SELECT id FROM users WHERE username = ?", (user_id,))
+            cursor.execute("SELECT id FROM users WHERE LOWER(username) = ?", (username_clean,))
             user_row = cursor.fetchone()
-            internal_user_id = user_row["id"] if user_row else f"user-{user_id}"
+            internal_user_id = user_row["id"] if user_row else f"user-{username_clean}"
     else:
         internal_user_id = user_row["id"]
 
@@ -364,13 +350,13 @@ def seed_default_board(user_id: str = "user", db_path: Path = None):
     )
 
     for col_id, col_title, col_pos, cards in DEFAULT_COLUMNS_SPEC:
-        actual_col_id = col_id if user_id in ("user", "testuser") else f"{col_id}-{user_id}"
+        actual_col_id = col_id if username_clean in ("user", "testuser") else f"{col_id}-{username_clean}"
         cursor.execute(
             "INSERT INTO columns (id, board_id, title, position) VALUES (?, ?, ?, ?)",
             (actual_col_id, board_id, col_title, col_pos),
         )
         for card_id, card_title, card_details, card_pos in cards:
-            actual_card_id = card_id if user_id in ("user", "testuser") else f"{card_id}-{user_id}"
+            actual_card_id = card_id if username_clean in ("user", "testuser") else f"{card_id}-{username_clean}"
             cursor.execute(
                 "INSERT INTO cards (id, column_id, title, details, position) VALUES (?, ?, ?, ?, ?)",
                 (actual_card_id, actual_col_id, card_title, card_details, card_pos),
@@ -385,7 +371,8 @@ def reset_default_board(user_id: str = "user", db_path: Path = None):
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id FROM users WHERE username = ?", (user_id,))
+    username_clean = user_id.strip().lower() if user_id else "user"
+    cursor.execute("SELECT id FROM users WHERE LOWER(username) = ?", (username_clean,))
     user_row = cursor.fetchone()
     if not user_row:
         conn.close()
@@ -488,7 +475,8 @@ def get_projects(user_id: str = "user", db_path: Path = None):
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id FROM users WHERE username = ?", (user_id,))
+    username_clean = user_id.strip().lower() if user_id else "user"
+    cursor.execute("SELECT id FROM users WHERE LOWER(username) = ?", (username_clean,))
     user_row = cursor.fetchone()
     if not user_row:
         conn.close()
@@ -587,7 +575,8 @@ def update_project(user_id: str, project_id: str, name: str, db_path: Path = Non
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id FROM users WHERE username = ?", (user_id,))
+    username_clean = user_id.strip().lower() if user_id else "user"
+    cursor.execute("SELECT id FROM users WHERE LOWER(username) = ?", (username_clean,))
     user_row = cursor.fetchone()
     if not user_row:
         conn.close()
@@ -626,7 +615,8 @@ def delete_project(user_id: str, project_id: str, db_path: Path = None):
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id FROM users WHERE username = ?", (user_id,))
+    username_clean = user_id.strip().lower() if user_id else "user"
+    cursor.execute("SELECT id FROM users WHERE LOWER(username) = ?", (username_clean,))
     user_row = cursor.fetchone()
     if not user_row:
         conn.close()
@@ -657,9 +647,10 @@ def get_board(user_id: str = "user", db_path: Path = None, project_id: str = Non
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id FROM users WHERE username = ?", (user_id,))
+    username_clean = user_id.strip().lower() if user_id else "user"
+    cursor.execute("SELECT id FROM users WHERE LOWER(username) = ?", (username_clean,))
     user_row = cursor.fetchone()
-    internal_user_id = user_row["id"] if user_row else f"user-{user_id}"
+    internal_user_id = user_row["id"] if user_row else f"user-{username_clean}"
 
     board_id = None
     if project_id and isinstance(project_id, str):
@@ -753,7 +744,8 @@ def save_board(user_id: str, board_data: dict, db_path: Path = None, project_id:
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id FROM users WHERE username = ?", (user_id,))
+    username_clean = user_id.strip().lower() if user_id else "user"
+    cursor.execute("SELECT id FROM users WHERE LOWER(username) = ?", (username_clean,))
     user_row = cursor.fetchone()
     internal_user_id = user_row["id"] if user_row else f"user-{user_id}"
 
