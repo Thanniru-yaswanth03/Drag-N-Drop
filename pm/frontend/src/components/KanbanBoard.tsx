@@ -81,7 +81,7 @@ export const KanbanBoard = () => {
 
   // Real-Time WebSocket Channel
   const handleWsMessage = useCallback((payload: any) => {
-    if (payload && payload.type === "BOARD_UPDATED" && payload.board) {
+    if (payload && payload.type === "BOARD_UPDATED" && payload.board && payload.projectId === activeProjectId) {
       setBoard(payload.board);
       if (user && activeProjectId) {
         localStorage.setItem(`kanban_board_${user}_${activeProjectId}`, JSON.stringify(payload.board));
@@ -143,22 +143,26 @@ export const KanbanBoard = () => {
     }
 
     setIsLoadingBoard(true);
-    fetchProjects(user).then((projs) => {
-      const safeProjs = Array.isArray(projs) && projs.length > 0 ? projs : initialProjs;
-      if (safeProjs.length > 0) {
-        setProjects(safeProjs);
-        localStorage.setItem(cacheProjsKey, JSON.stringify(safeProjs));
-        const savedActiveId = localStorage.getItem(`kanban_active_project_${user}`);
-        const found = safeProjs.find((p) => p.id === savedActiveId);
-        setActiveProjectId((curr) => curr || (found ? found.id : safeProjs[0].id));
-      } else {
-        const defaultProj: Project = { id: `board-${user}`, name: "Main Project" };
-        setProjects([defaultProj]);
-        setActiveProjectId(defaultProj.id);
-        localStorage.setItem(cacheProjsKey, JSON.stringify([defaultProj]));
-      }
-      setIsLoadingBoard(false);
-    });
+    fetchProjects(user)
+      .then((projs) => {
+        if (Array.isArray(projs)) {
+          if (projs.length > 0) {
+            setProjects(projs);
+            localStorage.setItem(cacheProjsKey, JSON.stringify(projs));
+            const savedActiveId = localStorage.getItem(`kanban_active_project_${user}`);
+            const found = projs.find((p) => p.id === savedActiveId);
+            setActiveProjectId((curr) => (curr && projs.some((p) => p.id === curr) ? curr : (found ? found.id : projs[0].id)));
+          } else if (initialProjs.length === 0) {
+            setProjects([]);
+            setActiveProjectId(null);
+          }
+        }
+        setIsLoadingBoard(false);
+      })
+      .catch((err) => {
+        console.error("Error fetching projects from server:", err);
+        setIsLoadingBoard(false);
+      });
   }, [user]);
 
   // Fetch board data whenever active project changes with instant cache hydration & default fallbacks
@@ -189,13 +193,14 @@ export const KanbanBoard = () => {
 
     fetchBoard(user, activeProjectId)
       .then((data) => {
-        if (!loadedFromCache && data && data.columns && Array.isArray(data.columns) && data.columns.length > 0) {
+        // Backend is SINGLE SOURCE OF TRUTH: Always update state on valid DB response
+        if (data && data.columns && Array.isArray(data.columns)) {
           resetBoard(data);
           localStorage.setItem(cacheKey, JSON.stringify(data));
         }
       })
-      .catch(() => {
-        // Keeps cached state on network error
+      .catch((err) => {
+        console.error("Error fetching board from backend:", err);
       })
       .finally(() => {
         setIsLoadingBoard(false);
@@ -280,11 +285,16 @@ export const KanbanBoard = () => {
     if (!user) return;
     const ok = await deleteProjectApi(user, projId);
     if (ok) {
+      localStorage.removeItem(`kanban_board_${user}_${projId}`);
       const remaining = projects.filter((p) => p.id !== projId);
       setProjects(remaining);
+      localStorage.setItem(`kanban_projects_${user}`, JSON.stringify(remaining));
       if (remaining.length > 0) {
         setActiveProjectId(remaining[0].id);
         localStorage.setItem(`kanban_active_project_${user}`, remaining[0].id);
+      } else {
+        setActiveProjectId(null);
+        localStorage.removeItem(`kanban_active_project_${user}`);
       }
     }
   };
@@ -380,6 +390,10 @@ export const KanbanBoard = () => {
     } catch {
       // Ignore network failure on logout
     }
+    if (user) {
+      localStorage.removeItem(`kanban_projects_${user}`);
+      localStorage.removeItem(`kanban_active_project_${user}`);
+    }
     localStorage.removeItem("pm_auth_user");
     localStorage.removeItem("pm_auth_token");
     setProjects([]);
@@ -468,8 +482,10 @@ export const KanbanBoard = () => {
       );
     }
 
-    await deleteCardApi(cardId, user || "user");
-    await persistBoard(nextBoard);
+    const success = await deleteCardApi(cardId, user || "user");
+    if (!success) {
+      console.error(`Failed to delete card ${cardId} on server.`);
+    }
   };
 
   const handleClearColumn = async (columnId: string) => {
@@ -524,7 +540,10 @@ export const KanbanBoard = () => {
     };
 
     setBoard(nextBoardData);
-    await updateCardApi(
+    if (user && activeProjectId) {
+      localStorage.setItem(`kanban_board_${user}_${activeProjectId}`, JSON.stringify(nextBoardData));
+    }
+    const res = await updateCardApi(
       cardId,
       {
         title,
@@ -537,7 +556,9 @@ export const KanbanBoard = () => {
       },
       user || "user"
     );
-    await persistBoard(nextBoardData);
+    if (!res) {
+      console.error(`Failed to update card ${cardId} on server.`);
+    }
   };
 
   const handleResetBoard = async () => {
