@@ -106,11 +106,12 @@ class TestAuditPersistenceFailures(unittest.TestCase):
         target_col = board["columns"][1]
         card_id = source_col["cardIds"][0]
 
-        source_col["cardIds"].remove(card_id)
-        target_col["cardIds"].append(card_id)
-
-        save_res = self.client.put("/api/board", json=board, headers=self.headers)
-        self.assertEqual(save_res.status_code, 200)
+        move_res = self.client.patch(
+            f"/api/cards/{card_id}/move",
+            json={"columnId": target_col["id"], "position": 0},
+            headers=self.headers,
+        )
+        self.assertEqual(move_res.status_code, 200)
 
         # Refresh
         refreshed = database.get_board(self.username, db_path=self.db_path)

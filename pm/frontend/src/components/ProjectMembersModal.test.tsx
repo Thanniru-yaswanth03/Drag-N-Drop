@@ -64,6 +64,6 @@ describe("ProjectMembersModal Component", () => {
     await userEvent.type(screen.getByPlaceholderText(/Username/i), "charlie");
     await userEvent.click(screen.getByRole("button", { name: /\+ Invite/i }));
 
-    expect(mockAdd).toHaveBeenCalledWith("board-user", "charlie", "member", "alice");
+    expect(mockAdd).toHaveBeenCalledWith("board-user", "charlie", "member");
   });
 });

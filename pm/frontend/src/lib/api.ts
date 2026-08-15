@@ -54,6 +54,15 @@ export function getAuthFetchHeaders(): Record<string, string> {
   return headers;
 }
 
+function checkUnauthorized(response: Response) {
+  if (response.status === 401 && typeof localStorage !== "undefined") {
+    localStorage.removeItem("pm_auth_token");
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("pm_auth_unauthorized"));
+    }
+  }
+}
+
 export async function registerApi(username: string, password: string) {
   const cleanUsername = username.trim().toLowerCase();
   try {
@@ -76,22 +85,64 @@ export async function registerApi(username: string, password: string) {
   }
 }
 
-function checkUnauthorized(response: Response) {
-  if (response.status === 401 && typeof localStorage !== "undefined") {
-    localStorage.removeItem("pm_auth_token");
-    localStorage.removeItem("pm_auth_user");
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("pm_auth_unauthorized"));
+export async function loginApi(username: string, password: string) {
+  const cleanUsername = username.trim().toLowerCase();
+  try {
+    const response = await fetch(getApiUrl("/api/auth/login"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: cleanUsername, password }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.ok && data.success) {
+      if (typeof localStorage !== "undefined" && data.token) {
+        localStorage.setItem("pm_auth_token", data.token);
+      }
+      return { success: true, user: data.user || cleanUsername, token: data.token };
     }
+    return { success: false, error: data.detail || "Invalid username or password" };
+  } catch (error) {
+    console.error("Error logging in:", error);
+    return { success: false, error: "Network error during login" };
   }
 }
 
-export async function fetchProjects(username: string = "user"): Promise<Project[]> {
+export async function checkAuthApi(): Promise<{ authenticated: boolean; user?: string }> {
   try {
-    const response = await fetch(
-      getApiUrl(`/api/projects?username=${encodeURIComponent(username)}`),
-      { headers: getAuthFetchHeaders() }
-    );
+    const response = await fetch(getApiUrl("/api/auth/me"), {
+      headers: getAuthFetchHeaders(),
+    });
+    checkUnauthorized(response);
+    if (response.ok) {
+      const data = await response.json();
+      return { authenticated: true, user: data.user };
+    }
+  } catch (error) {
+    console.error("Error checking auth:", error);
+  }
+  return { authenticated: false };
+}
+
+export async function logoutApi(): Promise<boolean> {
+  try {
+    await fetch(getApiUrl("/api/auth/logout"), {
+      method: "POST",
+      headers: getAuthHeaders(),
+    });
+  } catch (error) {
+    console.error("Error logging out:", error);
+  }
+  if (typeof localStorage !== "undefined") {
+    localStorage.removeItem("pm_auth_token");
+  }
+  return true;
+}
+
+export async function fetchProjects(): Promise<Project[]> {
+  try {
+    const response = await fetch(getApiUrl("/api/projects"), {
+      headers: getAuthFetchHeaders(),
+    });
     checkUnauthorized(response);
     if (!response.ok) {
       throw new Error(`Failed to fetch projects: ${response.statusText}`);
@@ -103,12 +154,9 @@ export async function fetchProjects(username: string = "user"): Promise<Project[
   }
 }
 
-export async function createProjectApi(
-  username: string = "user",
-  name: string
-): Promise<Project | null> {
+export async function createProjectApi(name: string): Promise<Project | null> {
   try {
-    const response = await fetch(getApiUrl(`/api/projects?username=${encodeURIComponent(username)}`), {
+    const response = await fetch(getApiUrl("/api/projects"), {
       method: "POST",
       headers: getAuthHeaders(),
       body: JSON.stringify({ name }),
@@ -124,19 +172,15 @@ export async function createProjectApi(
 }
 
 export async function updateProjectApi(
-  username: string = "user",
   projectId: string,
   name: string
 ): Promise<Project | null> {
   try {
-    const response = await fetch(
-      getApiUrl(`/api/projects/${encodeURIComponent(projectId)}?username=${encodeURIComponent(username)}`),
-      {
-        method: "PUT",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ name }),
-      }
-    );
+    const response = await fetch(getApiUrl(`/api/projects/${encodeURIComponent(projectId)}`), {
+      method: "PUT",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ name }),
+    });
     checkUnauthorized(response);
     if (response.ok) {
       return await response.json();
@@ -147,18 +191,12 @@ export async function updateProjectApi(
   return null;
 }
 
-export async function deleteProjectApi(
-  username: string = "user",
-  projectId: string
-): Promise<boolean> {
+export async function deleteProjectApi(projectId: string): Promise<boolean> {
   try {
-    const response = await fetch(
-      getApiUrl(`/api/projects/${encodeURIComponent(projectId)}?username=${encodeURIComponent(username)}`),
-      {
-        method: "DELETE",
-        headers: getAuthFetchHeaders(),
-      }
-    );
+    const response = await fetch(getApiUrl(`/api/projects/${encodeURIComponent(projectId)}`), {
+      method: "DELETE",
+      headers: getAuthFetchHeaders(),
+    });
     checkUnauthorized(response);
     return response.ok;
   } catch (error) {
@@ -167,14 +205,11 @@ export async function deleteProjectApi(
   }
 }
 
-export async function fetchBoard(
-  username: string = "user",
-  projectId?: string
-): Promise<BoardData | null> {
+export async function fetchBoard(projectId?: string): Promise<BoardData | null> {
   try {
-    let path = `/api/board?username=${encodeURIComponent(username)}`;
+    let path = "/api/board";
     if (projectId) {
-      path += `&project_id=${encodeURIComponent(projectId)}`;
+      path += `?project_id=${encodeURIComponent(projectId)}`;
     }
     const response = await fetch(getApiUrl(path), {
       headers: getAuthFetchHeaders(),
@@ -195,14 +230,13 @@ export async function fetchBoard(
 }
 
 export async function saveBoard(
-  username: string = "user",
   boardData: BoardData,
   projectId?: string
 ): Promise<boolean> {
   try {
-    let path = `/api/board?username=${encodeURIComponent(username)}`;
+    let path = "/api/board";
     if (projectId) {
-      path += `&project_id=${encodeURIComponent(projectId)}`;
+      path += `?project_id=${encodeURIComponent(projectId)}`;
     }
     const response = await fetch(getApiUrl(path), {
       method: "PUT",
@@ -218,7 +252,6 @@ export async function saveBoard(
 }
 
 export async function createCardApi(
-  username: string,
   columnId: string,
   title: string,
   details: string,
@@ -231,7 +264,7 @@ export async function createCardApi(
   }
 ) {
   try {
-    const response = await fetch(getApiUrl(`/api/cards?username=${encodeURIComponent(username)}`), {
+    const response = await fetch(getApiUrl("/api/cards"), {
       method: "POST",
       headers: getAuthHeaders(),
       body: JSON.stringify({ columnId, title, details, ...extraFields }),
@@ -257,12 +290,10 @@ export async function updateCardApi(
     dueDate?: string | null;
     tags?: string[];
     assignee?: string | null;
-  },
-  username?: string
+  }
 ) {
   try {
-    const queryParam = username ? `?username=${encodeURIComponent(username)}` : "";
-    const response = await fetch(getApiUrl(`/api/cards/${encodeURIComponent(cardId)}${queryParam}`), {
+    const response = await fetch(getApiUrl(`/api/cards/${encodeURIComponent(cardId)}`), {
       method: "PUT",
       headers: getAuthHeaders(),
       body: JSON.stringify(cardData),
@@ -278,10 +309,9 @@ export async function updateCardApi(
   return null;
 }
 
-export async function deleteCardApi(cardId: string, username?: string) {
+export async function deleteCardApi(cardId: string) {
   try {
-    const queryParam = username ? `?username=${encodeURIComponent(username)}` : "";
-    const response = await fetch(getApiUrl(`/api/cards/${encodeURIComponent(cardId)}${queryParam}`), {
+    const response = await fetch(getApiUrl(`/api/cards/${encodeURIComponent(cardId)}`), {
       method: "DELETE",
       headers: getAuthFetchHeaders(),
     });
@@ -349,13 +379,10 @@ export type ActivityItem = {
   createdAt?: string | null;
 };
 
-export async function fetchProjectActivity(
-  projectId: string,
-  username: string = "user"
-): Promise<ActivityItem[]> {
+export async function fetchProjectActivity(projectId: string): Promise<ActivityItem[]> {
   try {
     const response = await fetch(
-      getApiUrl(`/api/projects/${encodeURIComponent(projectId)}/activity?username=${encodeURIComponent(username)}`),
+      getApiUrl(`/api/projects/${encodeURIComponent(projectId)}/activity`),
       { headers: getAuthFetchHeaders() }
     );
     checkUnauthorized(response);
@@ -369,7 +396,6 @@ export async function fetchProjectActivity(
   return [];
 }
 
-
 export type ProjectMember = {
   id: string;
   username: string;
@@ -378,12 +404,11 @@ export type ProjectMember = {
 };
 
 export async function fetchProjectMembers(
-  projectId: string,
-  username: string = "user"
+  projectId: string
 ): Promise<{ members: ProjectMember[]; userRole: string }> {
   try {
     const response = await fetch(
-      getApiUrl(`/api/projects/${encodeURIComponent(projectId)}/members?username=${encodeURIComponent(username)}`),
+      getApiUrl(`/api/projects/${encodeURIComponent(projectId)}/members`),
       { headers: getAuthFetchHeaders() }
     );
     checkUnauthorized(response);
@@ -403,12 +428,11 @@ export async function fetchProjectMembers(
 export async function addProjectMemberApi(
   projectId: string,
   targetUsername: string,
-  role: string,
-  requestingUsername: string = "user"
+  role: string
 ) {
   try {
     const response = await fetch(
-      getApiUrl(`/api/projects/${encodeURIComponent(projectId)}/members?username=${encodeURIComponent(requestingUsername)}`),
+      getApiUrl(`/api/projects/${encodeURIComponent(projectId)}/members`),
       {
         method: "POST",
         headers: getAuthHeaders(),
@@ -429,13 +453,12 @@ export async function addProjectMemberApi(
 
 export async function removeProjectMemberApi(
   projectId: string,
-  targetUsername: string,
-  requestingUsername: string = "user"
+  targetUsername: string
 ) {
   try {
     const response = await fetch(
       getApiUrl(
-        `/api/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(targetUsername)}?username=${encodeURIComponent(requestingUsername)}`
+        `/api/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(targetUsername)}`
       ),
       {
         method: "DELETE",
@@ -464,14 +487,11 @@ export type NotificationItem = {
   createdAt?: string | null;
 };
 
-export async function fetchNotificationsApi(
-  username: string = "user"
-): Promise<{ notifications: NotificationItem[]; unreadCount: number }> {
+export async function fetchNotificationsApi(): Promise<{ notifications: NotificationItem[]; unreadCount: number }> {
   try {
-    const response = await fetch(
-      getApiUrl(`/api/notifications?username=${encodeURIComponent(username)}`),
-      { headers: getAuthFetchHeaders() }
-    );
+    const response = await fetch(getApiUrl("/api/notifications"), {
+      headers: getAuthFetchHeaders(),
+    });
     checkUnauthorized(response);
     if (response.ok) {
       const data = await response.json();
@@ -486,15 +506,10 @@ export async function fetchNotificationsApi(
   return { notifications: [], unreadCount: 0 };
 }
 
-export async function markNotificationReadApi(
-  notificationId: string,
-  username: string = "user"
-) {
+export async function markNotificationReadApi(notificationId: string) {
   try {
     const response = await fetch(
-      getApiUrl(
-        `/api/notifications/${encodeURIComponent(notificationId)}/read?username=${encodeURIComponent(username)}`
-      ),
+      getApiUrl(`/api/notifications/${encodeURIComponent(notificationId)}/read`),
       {
         method: "PUT",
         headers: getAuthFetchHeaders(),
@@ -508,15 +523,12 @@ export async function markNotificationReadApi(
   }
 }
 
-export async function markAllNotificationsReadApi(username: string = "user") {
+export async function markAllNotificationsReadApi() {
   try {
-    const response = await fetch(
-      getApiUrl(`/api/notifications/read-all?username=${encodeURIComponent(username)}`),
-      {
-        method: "POST",
-        headers: getAuthHeaders(),
-      }
-    );
+    const response = await fetch(getApiUrl("/api/notifications/read-all"), {
+      method: "POST",
+      headers: getAuthHeaders(),
+    });
     checkUnauthorized(response);
     return response.ok;
   } catch (error) {

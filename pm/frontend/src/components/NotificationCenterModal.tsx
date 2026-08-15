@@ -33,30 +33,30 @@ export const NotificationCenterModal = ({
   const [loading, setLoading] = useState(false);
 
   const loadNotifications = useCallback(async () => {
-    if (!username || !isOpen) return;
+    if (!isOpen) return;
     setLoading(true);
-    const data = await fetchNotificationsApi(username);
+    const data = await fetchNotificationsApi();
     setNotifications(data.notifications);
     setUnreadCount(data.unreadCount);
     setLoading(false);
-  }, [username, isOpen]);
+  }, [isOpen]);
 
   useEffect(() => {
-    if (isOpen && username) {
+    if (isOpen) {
       queueMicrotask(() => loadNotifications());
     }
-  }, [isOpen, username, loadNotifications]);
+  }, [isOpen, loadNotifications]);
 
   if (!isOpen) return null;
 
   const handleMarkRead = async (id: string) => {
-    await markNotificationReadApi(id, username);
+    await markNotificationReadApi(id);
     loadNotifications();
     if (onNotificationsChanged) onNotificationsChanged();
   };
 
   const handleMarkAllRead = async () => {
-    await markAllNotificationsReadApi(username);
+    await markAllNotificationsReadApi();
     loadNotifications();
     if (onNotificationsChanged) onNotificationsChanged();
   };

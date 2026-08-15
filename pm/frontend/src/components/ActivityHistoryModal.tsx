@@ -16,7 +16,6 @@ export const ActivityHistoryModal = ({
   onClose,
   projectId,
   projectName,
-  username = "user",
 }: ActivityHistoryModalProps) => {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -25,7 +24,7 @@ export const ActivityHistoryModal = ({
   useEffect(() => {
     if (isOpen && projectId) {
       queueMicrotask(() => setIsLoading(true));
-      fetchProjectActivity(projectId, username)
+      fetchProjectActivity(projectId)
         .then((data) => {
           setActivities(data);
         })
@@ -33,7 +32,7 @@ export const ActivityHistoryModal = ({
           setIsLoading(false);
         });
     }
-  }, [isOpen, projectId, username]);
+  }, [isOpen, projectId]);
 
   if (!isOpen) return null;
 

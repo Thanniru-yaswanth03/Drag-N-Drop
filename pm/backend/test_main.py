@@ -313,10 +313,9 @@ def test_unauthenticated_requests_rejected():
     """All protected endpoints must return 401 without a valid token."""
     assert client.get("/api/projects").status_code == 401
     assert client.get("/api/board").status_code == 401
-    assert client.put("/api/board", json={"columns": [], "cards": {}}).status_code == 401
-    assert client.post("/api/board/reset").status_code == 401
     assert client.post("/api/cards", json={"columnId": "x", "title": "t"}).status_code == 401
     assert client.put("/api/cards/fake-id", json={"title": "t"}).status_code == 401
     assert client.delete("/api/cards/fake-id").status_code == 401
     assert client.get("/api/notifications").status_code == 401
     assert client.get("/api/auth/me").status_code == 401
+

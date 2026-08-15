@@ -134,9 +134,8 @@ export const AIAssistantWidget = ({ board, projectId, onBoardUpdate }: AIAssista
         content: m.content,
       }));
 
-      const activeUser = localStorage.getItem("pm_auth_user") || "user";
       const headers = getAuthHeaders();
-      const response = await fetch(getApiUrl(`/api/ai/chat?username=${encodeURIComponent(activeUser)}`), {
+      const response = await fetch(getApiUrl("/api/ai/chat"), {
         method: "POST",
         headers,
         body: JSON.stringify({

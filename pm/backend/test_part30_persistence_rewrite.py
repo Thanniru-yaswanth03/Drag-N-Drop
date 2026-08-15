@@ -204,16 +204,13 @@ class TestPart30PersistenceRewrite(unittest.TestCase):
         # 4. Delete Card 2
         self.client.delete(f"/api/cards/{c2_id}", headers=headers)
         
-        # 5. Move Card 1 to Done column via PUT /api/board
-        current_board = self.client.get("/api/board", headers=headers).json()
-        # Find column 0 (backlog) and remove c1_id, add to column 4 (done)
-        for col in current_board["columns"]:
-            if c1_id in col["cardIds"]:
-                col["cardIds"].remove(c1_id)
-            if col["id"] == c_done_id:
-                col["cardIds"].append(c1_id)
-                
-        self.client.put("/api/board", json=current_board, headers=headers)
+        # 5. Move Card 1 to Done column via PATCH /api/cards/{card_id}/move
+        move_res = self.client.patch(
+            f"/api/cards/{c1_id}/move",
+            json={"columnId": c_done_id, "position": 0},
+            headers=headers,
+        )
+        self.assertEqual(move_res.status_code, 200)
         
         # 6. Logout & Login
         self.client.post("/api/auth/logout", headers=headers)

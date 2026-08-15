@@ -1,52 +1,52 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import {
-
   DndContext,
-
   DragOverlay,
+  type DragEndEvent,
+  type DragStartEvent,
+  useSensor,
+  useSensors,
   PointerSensor,
   TouchSensor,
   MouseSensor,
-  useSensor,
-  useSensors,
+  type CollisionDetection,
   pointerWithin,
   rectIntersection,
-  type DragEndEvent,
-  type DragStartEvent,
-  type CollisionDetection,
 } from "@dnd-kit/core";
+import { type BoardData, type Card, emptyBoardData, moveCard } from "@/lib/kanban";
+import { useUndoRedo } from "@/lib/useUndoRedo";
 import { KanbanColumn } from "@/components/KanbanColumn";
 import { KanbanCardPreview } from "@/components/KanbanCardPreview";
-import { LoginForm } from "@/components/LoginForm";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { LoginForm } from "@/components/LoginForm";
 import { EditCardModal } from "@/components/EditCardModal";
-import { AIAssistantWidget } from "@/components/AIAssistantWidget";
-import { TaskFilterToolbar } from "@/components/TaskFilterToolbar";
 import { ProjectSwitcher } from "@/components/ProjectSwitcher";
 import { ActivityHistoryModal } from "@/components/ActivityHistoryModal";
 import { ProjectMembersModal } from "@/components/ProjectMembersModal";
 import { NotificationCenterModal } from "@/components/NotificationCenterModal";
-import { useUndoRedo } from "@/lib/useUndoRedo";
+import { TaskFilterToolbar } from "@/components/TaskFilterToolbar";
+import { AIAssistantWidget } from "@/components/AIAssistantWidget";
 import { useWebSocket } from "@/lib/useWebSocket";
-import { emptyBoardData, moveCard, type Card, type BoardData } from "@/lib/kanban";
 import {
-  getApiUrl,
   fetchBoard,
   saveBoard,
-  createCardApi,
-  deleteCardApi,
-  updateCardApi,
-  moveCardApi,
-  updateColumnApi,
-  clearColumnApi,
   fetchProjects,
   createProjectApi,
   updateProjectApi,
   deleteProjectApi,
+  createCardApi,
+  updateCardApi,
+  deleteCardApi,
+  moveCardApi,
+  updateColumnApi,
+  clearColumnApi,
   fetchProjectMembers,
   fetchNotificationsApi,
+  loginApi,
+  logoutApi,
+  checkAuthApi,
   type Project,
 } from "@/lib/api";
 import {
@@ -60,11 +60,8 @@ import {
 } from "@/lib/filterUtils";
 
 export const KanbanBoard = () => {
-  const [user, setUser] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem("pm_auth_user");
-  });
-  const [isAuthLoaded, setIsAuthLoaded] = useState(true);
+  const [user, setUser] = useState<string | null>(null);
+  const [isAuthLoaded, setIsAuthLoaded] = useState(false);
   const {
     state: board,
     set: setBoard,
@@ -87,6 +84,7 @@ export const KanbanBoard = () => {
   const [, setUserRole] = useState<string>("owner");
   const [aiNotification, setAiNotification] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterOptions>(defaultFilterOptions);
+  const [sortOption, setSortOption] = useState<SortOptionType>(defaultSortOption);
 
   // Real-Time WebSocket Channel
   const handleWsMessage = useCallback((payload: unknown) => {
@@ -104,7 +102,7 @@ export const KanbanBoard = () => {
 
   const refreshNotifications = useCallback(() => {
     if (!user) return;
-    fetchNotificationsApi(user).then((res) => {
+    fetchNotificationsApi().then((res) => {
       setUnreadNotifCount(res.unreadCount);
     });
   }, [user]);
@@ -114,14 +112,10 @@ export const KanbanBoard = () => {
     const timer = setInterval(refreshNotifications, 15000);
     return () => clearInterval(timer);
   }, [refreshNotifications]);
-  const [sortOption, setSortOption] = useState<SortOptionType>(defaultSortOption);
 
+  // Initial Auth Verification (Single Source of Truth)
   useEffect(() => {
     const handleUnauthorized = () => {
-      if (typeof localStorage !== "undefined") {
-        localStorage.removeItem("pm_auth_token");
-        localStorage.removeItem("pm_auth_user");
-      }
       setUser(null);
       setProjects([]);
       setActiveProjectId(null);
@@ -130,63 +124,36 @@ export const KanbanBoard = () => {
 
     window.addEventListener("pm_auth_unauthorized", handleUnauthorized);
 
-    const storedUser = localStorage.getItem("pm_auth_user");
-    const storedToken = localStorage.getItem("pm_auth_token");
-
-    if (storedUser && storedToken) {
-      fetch(getApiUrl("/api/auth/me"), {
-        headers: {
-          Authorization: `Bearer ${storedToken}`,
-          "X-Session-Token": storedToken,
-        },
+    checkAuthApi()
+      .then((res) => {
+        if (res.authenticated && res.user) {
+          setUser(res.user);
+        } else {
+          setUser(null);
+        }
       })
-        .then((res) => {
-          if (res.ok) {
-            return res.json();
-          }
-          throw new Error("Unauthorized");
-        })
-        .then((data) => {
-          if (data && data.authenticated && data.user) {
-            setUser(data.user);
-          } else {
-            handleUnauthorized();
-          }
-        })
-        .catch(() => {
-          handleUnauthorized();
-        })
-        .finally(() => {
-          setIsAuthLoaded(true);
-        });
-    } else if (storedUser && process.env.NODE_ENV === "test") {
-      queueMicrotask(() => {
-        setUser(storedUser);
+      .catch(() => {
+        setUser(null);
+      })
+      .finally(() => {
         setIsAuthLoaded(true);
       });
-    } else {
-      localStorage.removeItem("pm_auth_user");
-      localStorage.removeItem("pm_auth_token");
-      queueMicrotask(() => setIsAuthLoaded(true));
-    }
 
     return () => {
       window.removeEventListener("pm_auth_unauthorized", handleUnauthorized);
     };
   }, [resetBoard]);
 
-  // Fetch user projects list on login
+  // Fetch user projects list whenever authenticated user changes
   useEffect(() => {
     if (!user) {
-      queueMicrotask(() => {
-        setProjects([]);
-        setActiveProjectId(null);
-      });
+      setProjects([]);
+      setActiveProjectId(null);
       return;
     }
 
-    queueMicrotask(() => setIsLoadingBoard(true));
-    fetchProjects(user)
+    setIsLoadingBoard(true);
+    fetchProjects()
       .then((projs) => {
         if (Array.isArray(projs) && projs.length > 0) {
           setProjects(projs);
@@ -195,26 +162,27 @@ export const KanbanBoard = () => {
           setProjects([]);
           setActiveProjectId(null);
         }
-        setIsLoadingBoard(false);
       })
       .catch((err) => {
         console.error("Error fetching projects from server:", err);
+      })
+      .finally(() => {
         setIsLoadingBoard(false);
       });
   }, [user]);
 
   // Fetch board data whenever active project changes
   useEffect(() => {
-    if (!user || !activeProjectId) return;
-
-    queueMicrotask(() => {
+    if (!user || !activeProjectId) {
       resetBoard(emptyBoardData);
-      setIsLoadingBoard(true);
-    });
+      return;
+    }
 
-    fetchBoard(user, activeProjectId)
+    resetBoard(emptyBoardData);
+    setIsLoadingBoard(true);
+
+    fetchBoard(activeProjectId)
       .then((data) => {
-        // Backend is SINGLE SOURCE OF TRUTH: Always update state on valid DB response
         if (data && data.columns && Array.isArray(data.columns)) {
           resetBoard(data);
         }
@@ -226,16 +194,16 @@ export const KanbanBoard = () => {
         setIsLoadingBoard(false);
       });
 
-    fetchProjectMembers(activeProjectId, user).then((res) => {
+    fetchProjectMembers(activeProjectId).then((res) => {
       setUserRole(res.userRole || "viewer");
     });
   }, [user, activeProjectId, resetBoard]);
 
   const persistBoard = useCallback(
     async (nextBoard: BoardData) => {
-      if (!user) return;
+      if (!user || !activeProjectId) return;
       setIsSyncing(true);
-      const success = await saveBoard(user, nextBoard, activeProjectId || undefined);
+      const success = await saveBoard(nextBoard, activeProjectId);
       setIsSyncing(false);
       if (!success) {
         console.error("Failed to persist board to backend");
@@ -279,20 +247,16 @@ export const KanbanBoard = () => {
 
   const handleCreateProject = async (name: string) => {
     if (!user) return;
-    let newProj = await createProjectApi(user, name);
-    if (!newProj || !newProj.id) {
-      newProj = { id: `board-${Date.now().toString(36)}`, name };
+    const newProj = await createProjectApi(name);
+    if (newProj && newProj.id) {
+      setProjects((prev) => [...prev, newProj]);
+      setActiveProjectId(newProj.id);
     }
-    setProjects((prev) => {
-      const exists = prev.some((p) => p.id === newProj!.id);
-      return exists ? prev : [...prev, newProj!];
-    });
-    setActiveProjectId(newProj.id);
   };
 
   const handleRenameProject = async (projId: string, name: string) => {
     if (!user) return;
-    const updated = await updateProjectApi(user, projId, name);
+    const updated = await updateProjectApi(projId, name);
     if (updated) {
       setProjects((prev) => prev.map((p) => (p.id === projId ? updated : p)));
     }
@@ -300,7 +264,7 @@ export const KanbanBoard = () => {
 
   const handleDeleteProject = async (projId: string) => {
     if (!user) return;
-    const ok = await deleteProjectApi(user, projId);
+    const ok = await deleteProjectApi(projId);
     if (ok) {
       const remaining = projects.filter((p) => p.id !== projId);
       setProjects(remaining);
@@ -326,8 +290,6 @@ export const KanbanBoard = () => {
 
   const sensors = useSensors(pointerSensor, touchSensor, mouseSensor);
 
-
-
   const collisionDetectionStrategy: CollisionDetection = useCallback((args) => {
     const pointerCollisions = pointerWithin(args);
     if (pointerCollisions.length > 0) {
@@ -337,7 +299,6 @@ export const KanbanBoard = () => {
   }, []);
 
   const cardsById = useMemo(() => board.cards, [board.cards]);
-
   const availableTags = useMemo(() => extractAvailableTags(board.cards), [board.cards]);
 
   const filteredBoard = useMemo(() => {
@@ -367,50 +328,18 @@ export const KanbanBoard = () => {
   const completionPercentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
   const handleLogin = async (username: string, password: string) => {
-    const cleanUser = username.trim().toLowerCase();
-    try {
-      const response = await fetch(getApiUrl("/api/auth/login"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: cleanUser, password }),
-      });
-      if (response.ok) {
-        const data = await response.json();
-        const authedUser = data.user || cleanUser;
-        setProjects([]);
-        setActiveProjectId(null);
-        if (data.token) {
-          localStorage.setItem("pm_auth_token", data.token);
-        }
-        localStorage.setItem("pm_auth_user", authedUser);
-        setUser(authedUser);
-        return true;
-      }
-    } catch (err) {
-      console.error("Login API error:", err);
+    const res = await loginApi(username, password);
+    if (res.success && res.user) {
+      setProjects([]);
+      setActiveProjectId(null);
+      setUser(res.user);
+      return true;
     }
-
     return false;
   };
 
   const handleLogout = async () => {
-    try {
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      const token = localStorage.getItem("pm_auth_token");
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-        headers["X-Session-Token"] = token;
-      }
-      await fetch(getApiUrl("/api/auth/logout"), { method: "POST", headers });
-    } catch {
-      // Ignore network failure on logout
-    }
-    if (user) {
-      localStorage.removeItem(`kanban_projects_${user}`);
-      localStorage.removeItem(`kanban_active_project_${user}`);
-    }
-    localStorage.removeItem("pm_auth_user");
-    localStorage.removeItem("pm_auth_token");
+    await logoutApi();
     setProjects([]);
     setActiveProjectId(null);
     resetBoard(emptyBoardData);
@@ -442,13 +371,12 @@ export const KanbanBoard = () => {
   };
 
   const handleRenameColumn = async (columnId: string, title: string) => {
-    const nextBoard = {
-      ...board,
-      columns: board.columns.map((column) =>
+    setBoard((prev) => ({
+      ...prev,
+      columns: prev.columns.map((column) =>
         column.id === columnId ? { ...column, title } : column
       ),
-    };
-    setBoard(nextBoard);
+    }));
     await updateColumnApi(columnId, title);
   };
 
@@ -456,7 +384,7 @@ export const KanbanBoard = () => {
     if (!user) return;
     setFilters(defaultFilterOptions);
     setSortOption(defaultSortOption);
-    const createdCard = await createCardApi(user, columnId, title, details);
+    const createdCard = await createCardApi(columnId, title, details);
     if (createdCard) {
       const id = createdCard.id;
       setBoard((prev) => ({
@@ -476,7 +404,7 @@ export const KanbanBoard = () => {
 
   const handleDeleteCard = async (columnId: string, cardId: string) => {
     if (!user) return;
-    const success = await deleteCardApi(cardId, user);
+    const success = await deleteCardApi(cardId);
     if (success) {
       setBoard((prev) => {
         const nextCards = Object.fromEntries(
@@ -524,19 +452,15 @@ export const KanbanBoard = () => {
     assignee?: string | null
   ) => {
     if (!user) return;
-    const res = await updateCardApi(
-      cardId,
-      {
-        title,
-        details,
-        description: details,
-        priority,
-        dueDate,
-        tags,
-        assignee,
-      },
-      user
-    );
+    const res = await updateCardApi(cardId, {
+      title,
+      details,
+      description: details,
+      priority,
+      dueDate,
+      tags,
+      assignee,
+    });
     if (res) {
       setBoard((prev) => ({
         ...prev,
@@ -548,30 +472,6 @@ export const KanbanBoard = () => {
     } else {
       console.error(`Failed to update card ${cardId} on server.`);
     }
-  };
-
-  const handleResetBoard = async () => {
-    if (!user) return;
-    try {
-      const token = localStorage.getItem("pm_auth_token");
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-        headers["X-Session-Token"] = token;
-      }
-      const response = await fetch(
-        getApiUrl(`/api/board/reset${activeProjectId ? `?project_id=${encodeURIComponent(activeProjectId)}` : ""}`),
-        { method: "POST", headers }
-      );
-      if (response.ok) {
-        const data = await response.json();
-        resetBoard(data);
-        return;
-      }
-    } catch {
-      // Fallback reset
-    }
-    resetBoard(emptyBoardData);
   };
 
   const handleBoardUpdateFromAI = (nextBoard: BoardData, notificationMessage?: string) => {
@@ -734,13 +634,6 @@ export const KanbanBoard = () => {
                   </span>
                   <button
                     type="button"
-                    onClick={handleResetBoard}
-                    className="ml-1 rounded-full border border-[var(--stroke)] bg-[var(--surface)] px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-[var(--navy-dark)] transition hover:bg-[var(--primary-blue)] hover:text-white"
-                  >
-                    Reset Board
-                  </button>
-                  <button
-                    type="button"
                     onClick={handleLogout}
                     className="ml-1 rounded-full bg-red-500/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-red-600 transition hover:bg-red-500 hover:text-white"
                   >
@@ -749,126 +642,117 @@ export const KanbanBoard = () => {
                 </div>
               </div>
 
-              {/* Progress Metric Card */}
-              <div className="w-full sm:w-64 rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] p-3.5 shadow-sm">
-                <div className="flex items-center justify-between text-xs font-bold text-[var(--navy-dark)]">
-                  <span>Sprint Progress</span>
-                  <span className="text-[var(--primary-blue)]">{completionPercentage}%</span>
-                </div>
-                <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-[var(--stroke)]">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-[var(--primary-blue)] to-[var(--secondary-purple)] transition-all duration-500"
-                    style={{ width: `${completionPercentage}%` }}
-                  />
+              {/* Progress Bar Component */}
+              <div className="flex items-center gap-3 w-full sm:w-72 bg-[var(--surface)] p-2.5 rounded-2xl border border-[var(--stroke)]">
+                <div className="flex-1">
+                  <div className="flex justify-between text-[11px] font-bold text-[var(--navy-dark)] mb-1">
+                    <span>Sprint Completion</span>
+                    <span className="text-[var(--primary-blue)]">{completionPercentage}%</span>
+                  </div>
+                  <div className="h-2 w-full bg-[var(--surface-strong)] rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-[var(--primary-blue)] to-emerald-500 transition-all duration-500 rounded-full"
+                      style={{ width: `${completionPercentage}%` }}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Task Discovery: Search, Filtering & Sorting Toolbar */}
-          <div className="pt-4 border-t border-[var(--stroke)]">
-            <TaskFilterToolbar
-              columns={board.columns}
-              availableTags={availableTags}
-              filters={filters}
-              sort={sortOption}
-              activeCount={activeFilterCount}
-              onFilterChange={setFilters}
-              onSortChange={setSortOption}
-              onReset={handleResetFilters}
-            />
-          </div>
+          {/* Filtering and Sorting Toolbar */}
+          <TaskFilterToolbar
+            columns={board.columns}
+            availableTags={availableTags}
+            filters={filters}
+            sort={sortOption}
+            activeCount={activeFilterCount}
+            onFilterChange={setFilters}
+            onSortChange={setSortOption}
+            onReset={handleResetFilters}
+          />
         </header>
 
-        {/* Board Columns Grid */}
+        {/* Dynamic Board Columns */}
         <DndContext
           sensors={sensors}
           collisionDetection={collisionDetectionStrategy}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
         >
+          <section
+            aria-label="Project Management Board"
+            className="flex-1 rounded-2xl sm:rounded-[36px] border border-[var(--stroke)] bg-[var(--card-bg)]/40 p-3 sm:p-6 shadow-[var(--shadow)] backdrop-blur-md"
+          >
+            <div className="flex gap-4 sm:gap-6 overflow-x-auto pb-4 pt-1 snap-x no-scrollbar">
+              {filteredBoard.columns.map((column) => {
+                const cardsInColumn = column.cardIds
+                  .map((id) => cardsById[id])
+                  .filter(Boolean);
 
-          <section className="mobile-snap-scroll grid gap-6 lg:grid-cols-5 pb-4 lg:pb-0">
-            {filteredBoard.columns.map((column) => (
-              <div key={column.id} id={`mobile-column-${column.id}`} className="mobile-snap-column">
-                <KanbanColumn
-                  column={column}
-                  cards={column.cardIds.map((cardId) => filteredBoard.cards[cardId]).filter(Boolean)}
-                  onRename={handleRenameColumn}
-                  onAddCard={handleAddCard}
-                  onDeleteCard={handleDeleteCard}
-                  onEditCard={(card) => setEditingCard(card)}
-                  onClearColumn={handleClearColumn}
-                />
-              </div>
-            ))}
+                return (
+                  <KanbanColumn
+                    key={column.id}
+                    column={column}
+                    cards={cardsInColumn}
+                    onAddCard={handleAddCard}
+                    onDeleteCard={handleDeleteCard}
+                    onRename={handleRenameColumn}
+                    onClearColumn={handleClearColumn}
+                    onEditCard={setEditingCard}
+                  />
+                );
+              })}
+            </div>
           </section>
+
           <DragOverlay>
-            {activeCard ? (
-              <div className="w-[280px] sm:w-[320px]">
-                <KanbanCardPreview card={activeCard} />
-              </div>
-            ) : null}
+            {activeCard ? <KanbanCardPreview card={activeCard} /> : null}
           </DragOverlay>
         </DndContext>
-
-
-        <footer className="mt-12 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-[var(--stroke)] pt-6 text-xs text-[var(--gray-text)]">
-          <div className="flex items-center gap-2 font-semibold">
-            <span>⚡ Designed & Engineered with 🔥 & AI for</span>
-            <span className="inline-flex items-center gap-1 font-extrabold text-[var(--navy-dark)] px-3 py-1 rounded-full bg-[var(--surface-strong)] border border-[var(--stroke)] shadow-sm">
-              YASH 🐐
-            </span>
-          </div>
-          <div className="flex items-center gap-3 font-medium">
-            <span className="rounded-full bg-[var(--primary-blue)]/10 px-3 py-0.5 text-[11px] font-bold text-[var(--primary-blue)]">
-              ✨ Kanban Studio Pro v1.0 🐐
-            </span>
-            <span>•</span>
-            <span className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Production Ready</span>
-            </span>
-          </div>
-        </footer>
       </main>
 
-      {/* Card Edit Modal */}
+      {/* Task Details & Edit Modal */}
       {editingCard && (
         <EditCardModal
           card={editingCard}
-          isOpen={!!editingCard}
+          isOpen={true}
           onClose={() => setEditingCard(null)}
           onSave={handleSaveCard}
         />
       )}
 
-      {/* Activity History Modal */}
-      <ActivityHistoryModal
-        isOpen={isActivityModalOpen}
-        onClose={() => setIsActivityModalOpen(false)}
-        projectId={activeProjectId}
-        projectName={projects.find((p) => p.id === activeProjectId)?.name || "Main Project"}
-        username={user || ""}
-      />
+      {/* Audit History & Activity Log Modal */}
+      {isActivityModalOpen && activeProjectId && (
+        <ActivityHistoryModal
+          projectId={activeProjectId}
+          projectName={projects.find((p) => p.id === activeProjectId)?.name || "Project"}
+          isOpen={isActivityModalOpen}
+          onClose={() => setIsActivityModalOpen(false)}
+        />
+      )}
 
-      {/* Project Members Modal */}
-      <ProjectMembersModal
-        projectId={activeProjectId || "default"}
-        currentUsername={user || ""}
-        isOpen={isMembersModalOpen}
-        onClose={() => setIsMembersModalOpen(false)}
-      />
+      {/* Project Team Members Modal */}
+      {isMembersModalOpen && activeProjectId && (
+        <ProjectMembersModal
+          projectId={activeProjectId}
+          currentUsername={user}
+          isOpen={isMembersModalOpen}
+          onClose={() => setIsMembersModalOpen(false)}
+        />
+      )}
 
-      {/* Notifications Modal */}
-      <NotificationCenterModal
-        username={user || ""}
-        isOpen={isNotificationsOpen}
-        onClose={() => setIsNotificationsOpen(false)}
-        onNotificationsChanged={refreshNotifications}
-      />
+      {/* User Notifications Modal */}
+      {isNotificationsOpen && (
+        <NotificationCenterModal
+          username={user}
+          isOpen={isNotificationsOpen}
+          onClose={() => setIsNotificationsOpen(false)}
+          onNotificationsChanged={refreshNotifications}
+        />
+      )}
 
-      {/* Floating Bottom-Right AI Assistant Widget */}
+      {/* AI Assistant Floating Widget */}
       <AIAssistantWidget
         board={board}
         projectId={activeProjectId}

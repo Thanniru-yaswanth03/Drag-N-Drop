@@ -36,18 +36,16 @@ export const LoginForm = ({ onLogin, onRegisterSuccess }: LoginFormProps) => {
           return;
         }
 
-        const targetUser = regRes.user || cleanUser;
         if (typeof localStorage !== "undefined") {
-          localStorage.setItem("pm_auth_user", targetUser);
           if (regRes.token) {
             localStorage.setItem("pm_auth_token", regRes.token);
           }
         }
 
         if (onRegisterSuccess) {
-          onRegisterSuccess(targetUser);
+          onRegisterSuccess(cleanUser);
         } else {
-          const success = await onLogin(targetUser, password);
+          const success = await onLogin(cleanUser, password);
           if (!success && regRes.token && typeof window !== "undefined") {
             window.location.reload();
           }

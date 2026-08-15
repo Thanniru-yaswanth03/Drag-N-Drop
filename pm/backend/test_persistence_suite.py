@@ -46,18 +46,17 @@ class TestPersistenceSuite(unittest.TestCase):
         col_id = board["columns"][0]["id"]
         new_id = "card-custom-100"
         
-        board["cards"][new_id] = {
-            "id": new_id,
-            "title": "Custom User Card 100",
-            "details": "Survives restart",
-            "priority": "high",
-            "dueDate": None,
-            "tags": ["test"],
-            "assignee": None
-        }
-        board["columns"][0]["cardIds"].append(new_id)
-
-        database.save_board(self.username, board, db_path=self.db_path)
+        card = database.add_card(
+            user_id=self.username,
+            column_id=col_id,
+            card_id=new_id,
+            title="Custom User Card 100",
+            details="Survives restart",
+            priority="high",
+            tags=["test"],
+            db_path=self.db_path,
+        )
+        self.assertIsNotNone(card)
 
         # Re-query
         board_after = database.get_board(self.username, db_path=self.db_path)
@@ -65,7 +64,6 @@ class TestPersistenceSuite(unittest.TestCase):
         self.assertEqual(board_after["cards"][new_id]["title"], "Custom User Card 100")
 
     def test_F_edit_card(self):
-        board = database.get_board(self.username, db_path=self.db_path)
         card_id = "card-3-test_user_persistence"
         updated = database.update_card(card_id, {"title": "Edited Title 999"}, user_id=self.username, db_path=self.db_path)
         self.assertEqual(updated["title"], "Edited Title 999")
@@ -75,15 +73,10 @@ class TestPersistenceSuite(unittest.TestCase):
 
     def test_G_move_card(self):
         board = database.get_board(self.username, db_path=self.db_path)
-        source_col = board["columns"][0]
-        target_col = board["columns"][1]
-        card_id = source_col["cardIds"][0]
+        target_col_id = board["columns"][1]["id"]
+        card_id = "card-3-test_user_persistence"
 
-        # Move card
-        source_col["cardIds"].remove(card_id)
-        target_col["cardIds"].append(card_id)
-
-        database.save_board(self.username, board, db_path=self.db_path)
+        database.move_card(card_id, target_col_id, position=0, user_id=self.username, db_path=self.db_path)
 
         board_after = database.get_board(self.username, db_path=self.db_path)
         self.assertIn(card_id, board_after["columns"][1]["cardIds"])
@@ -91,11 +84,8 @@ class TestPersistenceSuite(unittest.TestCase):
 
     def test_H_and_I_delete_all_cards_empty_board_persists(self):
         board = database.get_board(self.username, db_path=self.db_path)
-        for col in board["columns"]:
-            col["cardIds"] = []
-        board["cards"] = {}
-
-        database.save_board(self.username, board, db_path=self.db_path)
+        for card_id in list(board["cards"].keys()):
+            database.delete_card(card_id, user_id=self.username, db_path=self.db_path)
 
         # GET board (simulating refresh / restart)
         database.init_db(self.db_path)

@@ -61,6 +61,6 @@ describe("NotificationCenterModal Component", () => {
     });
 
     await userEvent.click(screen.getByText(/Mark all as read/i));
-    expect(mockMarkAll).toHaveBeenCalledWith("alice");
+    expect(mockMarkAll).toHaveBeenCalled();
   });
 });

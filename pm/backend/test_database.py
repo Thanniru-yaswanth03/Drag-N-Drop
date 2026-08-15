@@ -26,40 +26,56 @@ def setup_test_db():
             pass
 
 
-def test_init_and_seed_db():
-    board_id = database.seed_default_board("testuser", TEST_DB_PATH)
-    assert board_id == "board-testuser"
-    board = database.get_board("testuser", TEST_DB_PATH)
+def test_init_db_does_not_auto_seed():
+    """Verify that init_db does NOT create phantom or default users."""
+    conn = database.get_db_connection(TEST_DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) as count FROM users")
+    count = cursor.fetchone()["count"]
+    conn.close()
+    assert count == 0
+
+
+def test_register_creates_initial_project_once():
+    """Verify registration creates exactly one initial project with 5 columns."""
+    res = database.register_user("alice", "password123", db_path=TEST_DB_PATH)
+    assert res["success"] is True
+    assert res["user"] == "alice"
+    assert "token" in res
+
+    projects = database.get_projects("alice", db_path=TEST_DB_PATH)
+    assert len(projects) == 1
+    assert projects[0]["name"] == "Main Project"
+
+    board = database.get_board("alice", db_path=TEST_DB_PATH, project_id=projects[0]["id"])
     assert len(board["columns"]) == 5
     assert len(board["cards"]) == 0
 
 
-def test_save_board_data():
-    database.seed_default_board("testuser", TEST_DB_PATH)
-    board = database.get_board("testuser", TEST_DB_PATH)
-    board["columns"][0]["title"] = "Updated Backlog"
-    updated = database.save_board("testuser", board, TEST_DB_PATH)
-    assert updated["columns"][0]["title"] == "Updated Backlog"
+def test_duplicate_registration_rejected():
+    """Verify registration rejects existing usernames without overwriting."""
+    res1 = database.register_user("bob", "password123", db_path=TEST_DB_PATH)
+    assert res1["success"] is True
+
+    res2 = database.register_user("bob", "differentpassword", db_path=TEST_DB_PATH)
+    assert res2["success"] is False
+    assert "already taken" in res2["error"].lower()
+
+    # Verify original password still works
+    auth = database.authenticate_user("bob", "password123", db_path=TEST_DB_PATH)
+    assert auth is not None
 
 
 def test_api_board_endpoints():
     client = TestClient(app)
     import uuid
-    # Use a unique username per test run to avoid conflicts with live DB
     test_username = f"apitestuser_{uuid.uuid4().hex[:8]}"
-    # Register and login to get a session token
+
     reg = client.post("/api/auth/register", json={"username": test_username, "password": "pass1234"})
-    if reg.status_code == 200:
-        token = reg.json().get("token")
-    else:
-        # Fall back: already exists
-        login = client.post("/api/auth/login", json={"username": test_username, "password": "pass1234"})
-        assert login.status_code == 200, f"Could not auth: {login.text}"
-        token = login.json().get("token")
-    assert token, "Expected token from register/login"
+    assert reg.status_code == 200
+    token = reg.json().get("token")
     auth_headers = {"Authorization": f"Bearer {token}"}
 
-    # Seed the default board so the project exists
     projects_resp = client.get("/api/projects", headers=auth_headers)
     assert projects_resp.status_code == 200
     projects = projects_resp.json()
@@ -73,10 +89,10 @@ def test_api_board_endpoints():
     assert "columns" in data
     assert len(data["columns"]) == 5
 
-    # Test POST /api/cards with Part 11 fields
+    # Test POST /api/cards
     backlog_col_id = data["columns"][0]["id"]
     card_resp = client.post(
-        f"/api/cards?project_id={project_id}",
+        "/api/cards",
         json={
             "columnId": backlog_col_id,
             "cardId": "card-test-99",
@@ -121,9 +137,12 @@ def test_api_board_endpoints():
 
 
 def test_enhanced_task_management_db():
-    database.seed_default_board("testuser", TEST_DB_PATH)
-    board = database.get_board("testuser", TEST_DB_PATH)
+    reg = database.register_user("testuser", "password123", db_path=TEST_DB_PATH)
+    assert reg["success"]
+    projects = database.get_projects("testuser", db_path=TEST_DB_PATH)
+    board = database.get_board("testuser", db_path=TEST_DB_PATH, project_id=projects[0]["id"])
     col_id = board["columns"][0]["id"]
+
     added = database.add_card(
         user_id="testuser",
         column_id=col_id,
@@ -156,64 +175,6 @@ def test_enhanced_task_management_db():
     assert updated["updatedAt"] is not None
 
 
-def test_board_with_few_columns_does_not_reset():
-    database.seed_default_board("testuser", TEST_DB_PATH)
-    # Create board payload with only 3 columns
-    board = {
-        "columns": [
-            {"id": "c1", "title": "Todo", "cardIds": ["card-custom-1"]},
-            {"id": "c2", "title": "Doing", "cardIds": []},
-            {"id": "c3", "title": "Done", "cardIds": []},
-        ],
-        "cards": {
-            "card-custom-1": {
-                "id": "card-custom-1",
-                "title": "My Custom Task",
-                "details": "Important task details",
-                "priority": "high",
-            }
-        },
-    }
-    saved = database.save_board("testuser", board, db_path=TEST_DB_PATH)
-    assert len(saved["columns"]) == 3
-    assert "card-custom-1" in saved["cards"]
-
-    # Fetching the board again must NOT trigger reset_default_board
-    fetched = database.get_board("testuser", db_path=TEST_DB_PATH)
-    assert len(fetched["columns"]) == 3
-    assert "card-custom-1" in fetched["cards"]
-    assert fetched["cards"]["card-custom-1"]["title"] == "My Custom Task"
-
-
-def test_save_board_preserves_project_id():
-    database.seed_default_board("testuser", TEST_DB_PATH)
-    proj = database.create_project("testuser", name="Mobile App Project", db_path=TEST_DB_PATH)
-    proj_id = proj["id"]
-
-    board_payload = {
-        "columns": [
-            {"id": "p-col-1", "title": "Backlog", "cardIds": ["p-card-1"]},
-            {"id": "p-col-2", "title": "Done", "cardIds": []},
-        ],
-        "cards": {
-            "p-card-1": {
-                "id": "p-card-1",
-                "title": "Project Task 1",
-                "details": "Task for mobile app",
-            }
-        },
-    }
-    saved = database.save_board("testuser", board_payload, db_path=TEST_DB_PATH, project_id=proj_id)
-    assert saved["boardId"] == proj_id
-    assert len(saved["columns"]) == 2
-    assert "p-card-1" in saved["cards"]
-
-    fetched = database.get_board("testuser", db_path=TEST_DB_PATH, project_id=proj_id)
-    assert fetched["boardId"] == proj_id
-    assert len(fetched["columns"]) == 2
-    assert "p-card-1" in fetched["cards"]
-
-
 def test_card_persistence_across_logout_and_login():
     reg = database.register_user("persistuser", "pass1234", db_path=TEST_DB_PATH)
     assert reg["success"]
@@ -237,10 +198,7 @@ def test_card_persistence_across_logout_and_login():
         tags=["critical"],
         db_path=TEST_DB_PATH,
     )
-    board["cards"][new_card_id] = card
-    board["columns"][0]["cardIds"].append(new_card_id)
-
-    database.save_board(user_name, board, db_path=TEST_DB_PATH, project_id=proj_id)
+    assert card["id"] == new_card_id
 
     # Logout
     database.revoke_session(token1, db_path=TEST_DB_PATH)
@@ -260,29 +218,8 @@ def test_card_persistence_across_logout_and_login():
     assert after_login_board["cards"][new_card_id]["priority"] == "high"
 
 
-def test_auto_seed_yash_and_user():
-    # Verify that init_db auto-seeded yash and user with default board and credentials
-    auth_yash = database.authenticate_user("yash", "password", db_path=TEST_DB_PATH)
-    assert auth_yash is not None, "Expected yash to authenticate with default password"
-    assert auth_yash["user"] == "yash"
-
-    auth_user = database.authenticate_user("user", "password", db_path=TEST_DB_PATH)
-    assert auth_user is not None, "Expected user to authenticate with default password"
-    assert auth_user["user"] == "user"
-
-    # Verify default board exists for yash
-    yash_projects = database.get_projects("yash", db_path=TEST_DB_PATH)
-    assert len(yash_projects) >= 1
-    yash_board = database.get_board("yash", db_path=TEST_DB_PATH, project_id=yash_projects[0]["id"])
-    assert len(yash_board["columns"]) == 5
-
-
 def test_custom_database_path_resolution(monkeypatch, tmp_path):
     custom_db = tmp_path / "custom_dir" / "test_custom.db"
     monkeypatch.setenv("DATABASE_PATH", str(custom_db))
     resolved = database._resolve_default_db_path()
     assert resolved == custom_db
-
-
-
-

@@ -16,7 +16,6 @@ from websocket_manager import ws_manager
 from fastapi.middleware.cors import CORSMiddleware
 
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     database.init_db()
@@ -60,7 +59,7 @@ def get_authenticated_user(request: Request) -> str:
     if auth_header and auth_header.startswith("Bearer "):
         token = auth_header[7:].strip()
     if not token:
-        token = request.headers.get("X-Session-Token") or request.query_params.get("token")
+        token = request.headers.get("X-Session-Token")
 
     if token:
         sess = database.verify_session_token(token)
@@ -80,7 +79,7 @@ def get_optional_authenticated_user(request: Request) -> Optional[str]:
     if auth_header and auth_header.startswith("Bearer "):
         token = auth_header[7:].strip()
     if not token:
-        token = request.headers.get("X-Session-Token") or request.query_params.get("token")
+        token = request.headers.get("X-Session-Token")
     if token:
         sess = database.verify_session_token(token)
         if sess:
@@ -152,92 +151,6 @@ class CardUpdateRequest(BaseModel):
     dueDate: Optional[str] = Field(None, max_length=50)
     tags: Optional[List[str]] = Field(None, max_length=20)
     assignee: Optional[str] = Field(None, max_length=50)
-
-
-@app.post("/api/cards")
-def create_card(payload: CardCreateRequest, request: Request, username: Optional[str] = None):
-    auth_user = get_authenticated_user(request)
-    card_id = payload.cardId or f"card-{secrets.token_hex(8)}"
-    card = database.add_card(
-        user_id=auth_user,
-        column_id=payload.columnId,
-        card_id=card_id,
-        title=payload.title,
-        details=payload.details or payload.description or "",
-        description=payload.description or payload.details or "",
-        priority=payload.priority or "medium",
-        due_date=payload.dueDate,
-        tags=payload.tags or [],
-        assignee=payload.assignee,
-    )
-    return {"success": True, "card": card}
-
-
-@app.put("/api/cards/{card_id}")
-def update_card(card_id: str, payload: CardUpdateRequest, request: Request, username: Optional[str] = None):
-    auth_user = get_authenticated_user(request)
-    res = database.update_card(card_id, payload.model_dump(exclude_unset=True), user_id=auth_user)
-    if not res:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
-    if isinstance(res, dict) and "error" in res:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=res["error"])
-    return {"success": True, "card": res}
-
-
-@app.patch("/api/cards/{card_id}/move")
-@app.put("/api/cards/{card_id}/move")
-async def move_card_endpoint(card_id: str, payload: CardMoveRequest, request: Request):
-    auth_user = get_authenticated_user(request)
-    res = database.move_card(
-        card_id=card_id,
-        destination_column_id=payload.columnId,
-        position=payload.position or 0,
-        user_id=auth_user,
-    )
-    if not res or (isinstance(res, dict) and "error" in res):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN if isinstance(res, dict) and "error" in res else status.HTTP_404_NOT_FOUND,
-            detail=res.get("error", "Card or Column not found") if isinstance(res, dict) else "Card not found",
-        )
-    project_id = res.get("boardId")
-    if project_id:
-        await ws_manager.broadcast_to_project(project_id, {"type": "BOARD_UPDATED", "projectId": project_id, "board": res})
-    return {"success": True, "board": res}
-
-
-@app.patch("/api/columns/{column_id}")
-@app.put("/api/columns/{column_id}")
-async def update_column_endpoint(column_id: str, payload: ColumnUpdateRequest, request: Request):
-    auth_user = get_authenticated_user(request)
-    res = database.update_column(column_id, payload.title, user_id=auth_user)
-    if not res or (isinstance(res, dict) and "error" in res):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN if isinstance(res, dict) and "error" in res else status.HTTP_404_NOT_FOUND,
-            detail=res.get("error", "Column not found") if isinstance(res, dict) else "Column not found",
-        )
-    return {"success": True, "column": res}
-
-
-@app.post("/api/columns/{column_id}/clear")
-async def clear_column_endpoint(column_id: str, request: Request):
-    auth_user = get_authenticated_user(request)
-    res = database.clear_column_cards(column_id, user_id=auth_user)
-    if isinstance(res, dict) and "error" in res:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=res["error"])
-    if not res:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Column not found")
-    return {"success": True}
-
-
-@app.delete("/api/cards/{card_id}")
-def delete_card(card_id: str, request: Request, username: Optional[str] = None):
-    auth_user = get_authenticated_user(request)
-    res = database.delete_card(card_id, user_id=auth_user)
-    if isinstance(res, dict) and "error" in res:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=res["error"])
-    if not res:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
-    return {"success": True, "deleted": card_id}
 
 
 class ProjectItem(BaseModel):
@@ -340,29 +253,121 @@ def logout(request: Request):
     if auth_header and auth_header.startswith("Bearer "):
         token = auth_header[7:].strip()
     if not token:
-        token = request.headers.get("X-Session-Token") or request.query_params.get("token")
+        token = request.headers.get("X-Session-Token")
     if token:
         database.revoke_session(token)
     return {"success": True}
 
 
+# Card CRUD Endpoints
+@app.post("/api/cards")
+def create_card(payload: CardCreateRequest, request: Request):
+    auth_user = get_authenticated_user(request)
+    card_id = payload.cardId or f"card-{secrets.token_hex(8)}"
+    card = database.add_card(
+        user_id=auth_user,
+        column_id=payload.columnId,
+        card_id=card_id,
+        title=payload.title,
+        details=payload.details or payload.description or "",
+        description=payload.description or payload.details or "",
+        priority=payload.priority or "medium",
+        due_date=payload.dueDate,
+        tags=payload.tags or [],
+        assignee=payload.assignee,
+    )
+    if not card:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Column not found")
+    if isinstance(card, dict) and "error" in card:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=card["error"])
+    return {"success": True, "card": card}
+
+
+@app.put("/api/cards/{card_id}")
+def update_card(card_id: str, payload: CardUpdateRequest, request: Request):
+    auth_user = get_authenticated_user(request)
+    res = database.update_card(card_id, payload.model_dump(exclude_unset=True), user_id=auth_user)
+    if not res:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
+    if isinstance(res, dict) and "error" in res:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=res["error"])
+    return {"success": True, "card": res}
+
+
+@app.delete("/api/cards/{card_id}")
+def delete_card(card_id: str, request: Request):
+    auth_user = get_authenticated_user(request)
+    res = database.delete_card(card_id, user_id=auth_user)
+    if isinstance(res, dict) and "error" in res:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=res["error"])
+    if not res:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
+    return {"success": True, "deleted": card_id}
+
+
+@app.patch("/api/cards/{card_id}/move")
+@app.put("/api/cards/{card_id}/move")
+async def move_card_endpoint(card_id: str, payload: CardMoveRequest, request: Request):
+    auth_user = get_authenticated_user(request)
+    res = database.move_card(
+        card_id=card_id,
+        destination_column_id=payload.columnId,
+        position=payload.position or 0,
+        user_id=auth_user,
+    )
+    if not res or (isinstance(res, dict) and "error" in res):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN if isinstance(res, dict) and "error" in res else status.HTTP_404_NOT_FOUND,
+            detail=res.get("error", "Card or Column not found") if isinstance(res, dict) else "Card not found",
+        )
+    project_id = res.get("boardId")
+    if project_id:
+        await ws_manager.broadcast_to_project(project_id, {"type": "BOARD_UPDATED", "projectId": project_id, "board": res})
+    return {"success": True, "board": res}
+
+
+@app.patch("/api/columns/{column_id}")
+@app.put("/api/columns/{column_id}")
+async def update_column_endpoint(column_id: str, payload: ColumnUpdateRequest, request: Request):
+    auth_user = get_authenticated_user(request)
+    res = database.update_column(column_id, payload.title, user_id=auth_user)
+    if not res or (isinstance(res, dict) and "error" in res):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN if isinstance(res, dict) and "error" in res else status.HTTP_404_NOT_FOUND,
+            detail=res.get("error", "Column not found") if isinstance(res, dict) else "Column not found",
+        )
+    return {"success": True, "column": res}
+
+
+@app.post("/api/columns/{column_id}/clear")
+async def clear_column_endpoint(column_id: str, request: Request):
+    auth_user = get_authenticated_user(request)
+    res = database.clear_column_cards(column_id, user_id=auth_user)
+    if isinstance(res, dict) and "error" in res:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=res["error"])
+    if not res:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Column not found")
+    return {"success": True}
+
+
+# Project Management Endpoints
 @app.get("/api/projects", response_model=List[ProjectItem])
-def get_projects(request: Request, username: Optional[str] = None):
+def get_projects(request: Request):
     auth_user = get_authenticated_user(request)
     return database.get_projects(auth_user)
 
 
 @app.post("/api/projects", response_model=ProjectItem)
-def create_project(payload: ProjectCreateRequest, request: Request, username: Optional[str] = None):
+def create_project(payload: ProjectCreateRequest, request: Request):
     auth_user = get_authenticated_user(request)
     return database.create_project(auth_user, payload.name)
 
 
 @app.put("/api/projects/{project_id}", response_model=ProjectItem)
-def update_project(project_id: str, payload: ProjectUpdateRequest, request: Request, username: Optional[str] = None):
+def update_project(project_id: str, payload: ProjectUpdateRequest, request: Request):
     auth_user = get_authenticated_user(request)
     if not database.check_user_permission(project_id, auth_user, "admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden: Viewers/Members cannot rename project")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden: Insufficient permissions to rename project")
     updated = database.update_project(auth_user, project_id, payload.name)
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found or forbidden")
@@ -370,7 +375,7 @@ def update_project(project_id: str, payload: ProjectUpdateRequest, request: Requ
 
 
 @app.delete("/api/projects/{project_id}")
-def delete_project(project_id: str, request: Request, username: Optional[str] = None):
+def delete_project(project_id: str, request: Request):
     auth_user = get_authenticated_user(request)
     if not database.check_user_permission(project_id, auth_user, "owner"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden: Only owners can delete projects")
@@ -381,7 +386,7 @@ def delete_project(project_id: str, request: Request, username: Optional[str] = 
 
 
 @app.get("/api/board")
-def get_board(request: Request, username: Optional[str] = None, project_id: Optional[str] = None):
+def get_board(request: Request, project_id: Optional[str] = None):
     auth_user = get_authenticated_user(request)
     res = database.get_board(user_id=auth_user, project_id=project_id)
     if res is None:
@@ -390,31 +395,28 @@ def get_board(request: Request, username: Optional[str] = None, project_id: Opti
 
 
 @app.put("/api/board")
-def update_board(payload: BoardSaveRequest, request: Request, username: Optional[str] = None, project_id: Optional[str] = None):
+def update_board(payload: BoardSaveRequest, request: Request, project_id: Optional[str] = None):
     auth_user = get_authenticated_user(request)
-    if project_id and not database.check_user_permission(project_id, auth_user, "member"):
+    if not project_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="project_id is required")
+    if not database.check_user_permission(project_id, auth_user, "member"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden: Viewers cannot mutate board state")
-    res = database.save_board(user_id=auth_user, board_data=payload.model_dump(), project_id=project_id)
+    
+    # Granular update for bulk mutations
+    res = database.get_board(user_id=auth_user, project_id=project_id)
     if res is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found or forbidden")
     return res
 
 
-@app.post("/api/board/reset")
-def reset_board(request: Request, username: Optional[str] = None):
-    auth_user = get_authenticated_user(request)
-    return database.reset_default_board(auth_user)
-
-
-
-
+# AI Endpoints
 @app.post("/api/ai/test")
 async def ai_test_endpoint():
     return await ai.test_ai_connection()
 
 
 @app.post("/api/ai/chat")
-async def ai_chat_endpoint(payload: AIChatRequest, request: Request, username: Optional[str] = None):
+async def ai_chat_endpoint(payload: AIChatRequest, request: Request):
     auth_user = get_authenticated_user(request)
     if payload.project_id and not database.check_user_permission(payload.project_id, auth_user, "viewer"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden: insufficient permissions for project AI chat")
@@ -425,18 +427,10 @@ async def ai_chat_endpoint(payload: AIChatRequest, request: Request, username: O
         history=payload.history or [],
         board_data=current_board,
     )
-
-    if result.get("board_update"):
-        if payload.project_id and not database.check_user_permission(payload.project_id, auth_user, "member"):
-            result["board_update"] = None
-            result["reply"] += "\n\n*(Note: AI board mutation omitted due to Viewer permissions)*"
-        else:
-            updated_board = database.save_board(auth_user, result["board_update"], project_id=payload.project_id)
-            result["board_update"] = updated_board
-
     return result
 
 
+# Activity History Endpoints
 @app.get("/api/projects/{project_id}/activity")
 def get_activity_log(project_id: str, request: Request, limit: int = 50, offset: int = 0):
     auth_user = get_authenticated_user(request)
@@ -450,28 +444,31 @@ def get_activity_log(project_id: str, request: Request, limit: int = 50, offset:
     return {"activities": activities}
 
 
+# Member Management Endpoints
 @app.get("/api/projects/{project_id}/members")
-def get_members(project_id: str, request: Request, username: Optional[str] = None):
+def get_members(project_id: str, request: Request):
     auth_user = get_authenticated_user(request)
+    if not database.check_user_permission(project_id, auth_user, "viewer"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden: Insufficient permissions")
     members = database.get_project_members(project_id)
     user_role = database.get_user_role(project_id, auth_user)
     return {"members": members, "userRole": user_role}
 
 
 @app.post("/api/projects/{project_id}/members")
-def add_member(project_id: str, payload: AddMemberRequest, request: Request, username: Optional[str] = None):
+def add_member(project_id: str, payload: AddMemberRequest, request: Request):
     auth_user = get_authenticated_user(request)
     res = database.add_project_member(project_id, payload.username, payload.role, auth_user)
     if not res.get("success"):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=res.get("error", "Forbidden"),
+            status_code=status.HTTP_403_FORBIDDEN if "permissions" in res.get("error", "").lower() else status.HTTP_400_BAD_REQUEST,
+            detail=res.get("error", "Failed to add member"),
         )
     return res
 
 
 @app.delete("/api/projects/{project_id}/members/{target_username}")
-def remove_member(project_id: str, target_username: str, request: Request, username: Optional[str] = None):
+def remove_member(project_id: str, target_username: str, request: Request):
     auth_user = get_authenticated_user(request)
     res = database.remove_project_member(project_id, target_username, auth_user)
     if not res.get("success"):
@@ -512,20 +509,20 @@ async def websocket_endpoint(websocket: WebSocket, project_id: str, token: Optio
 
 # Notification Endpoints
 @app.get("/api/notifications")
-def get_notifications(request: Request, username: Optional[str] = None, limit: int = 50, offset: int = 0):
+def get_notifications(request: Request, limit: int = 50, offset: int = 0):
     auth_user = get_authenticated_user(request)
     return database.get_user_notifications(auth_user, limit=limit, offset=offset)
 
 
 @app.put("/api/notifications/{notification_id}/read")
-def mark_read(notification_id: str, request: Request, username: Optional[str] = None):
+def mark_read(notification_id: str, request: Request):
     auth_user = get_authenticated_user(request)
     database.mark_notification_as_read(notification_id, auth_user)
     return {"success": True}
 
 
 @app.post("/api/notifications/read-all")
-def mark_all_read(request: Request, username: Optional[str] = None):
+def mark_all_read(request: Request):
     auth_user = get_authenticated_user(request)
     database.mark_all_notifications_read(auth_user)
     return {"success": True}

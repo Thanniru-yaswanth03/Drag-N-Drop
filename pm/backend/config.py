@@ -29,6 +29,5 @@ RATE_LIMIT_LOGIN_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_LOGIN_WINDOW_SECONDS
 
 # Database & Persistence Configuration
 DATABASE_PATH = os.getenv("DATABASE_PATH", "").strip()
-AUTO_SEED_USERS = [u.strip().lower() for u in os.getenv("AUTO_SEED_USERS", "yash,user").split(",") if u.strip()]
-DEFAULT_USER_PASSWORD = os.getenv("DEFAULT_USER_PASSWORD", "password").strip()
+
 

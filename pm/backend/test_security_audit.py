@@ -26,10 +26,10 @@ def setup_test_db(monkeypatch):
 
 
 def test_session_token_creation_and_validation():
-    session = database.create_session("secuser", db_path=TEST_DB_PATH)
-    assert session["success"] is True
-    assert session["user"] == "secuser"
-    token = session["token"]
+    reg = database.register_user("secuser", "password123", db_path=TEST_DB_PATH)
+    assert reg["success"] is True
+    assert reg["user"] == "secuser"
+    token = reg["token"]
     assert token.startswith("sess-")
 
     verified = database.verify_session_token(token, db_path=TEST_DB_PATH)
@@ -41,8 +41,8 @@ def test_session_token_creation_and_validation():
 
 
 def test_session_revocation_on_logout():
-    session = database.create_session("logoutuser", db_path=TEST_DB_PATH)
-    token = session["token"]
+    reg = database.register_user("logoutuser", "password123", db_path=TEST_DB_PATH)
+    token = reg["token"]
 
     # Verify session is active
     assert database.verify_session_token(token, db_path=TEST_DB_PATH) is not None
@@ -57,12 +57,14 @@ def test_session_revocation_on_logout():
 
 
 def test_cross_user_project_isolation():
-    # User A creates a project
-    proj_a = database.create_project("usera", name="User A Secret Project", db_path=TEST_DB_PATH)
+    # User A registers and has project
+    reg_a = database.register_user("usera", "password123", db_path=TEST_DB_PATH)
+    proj_a = database.get_projects("usera", db_path=TEST_DB_PATH)[0]
     proj_a_id = proj_a["id"]
 
-    # Create session for User B
-    sess_b = database.create_session("userb", db_path=TEST_DB_PATH)["token"]
+    # User B registers
+    reg_b = database.register_user("userb", "password123", db_path=TEST_DB_PATH)
+    sess_b = reg_b["token"]
     headers_b = {"Authorization": f"Bearer {sess_b}"}
 
     # User B attempts to access User A's board
@@ -79,16 +81,17 @@ def test_cross_user_project_isolation():
 
 
 def test_viewer_role_cannot_mutate_project():
-    # Owner creates a project
-    proj = database.create_project("owneruser", name="RBAC Project", db_path=TEST_DB_PATH)
-    proj_id = proj["id"]
+    # Owner registers
+    reg_owner = database.register_user("owneruser", "password123", db_path=TEST_DB_PATH)
+    proj_id = database.get_projects("owneruser", db_path=TEST_DB_PATH)[0]["id"]
+
+    # Viewer registers
+    reg_viewer = database.register_user("vieweruser", "password123", db_path=TEST_DB_PATH)
+    sess_viewer = reg_viewer["token"]
+    headers_viewer = {"Authorization": f"Bearer {sess_viewer}"}
 
     # Owner adds vieweruser as 'viewer'
     database.add_project_member(proj_id, "vieweruser", "viewer", requesting_username="owneruser", db_path=TEST_DB_PATH)
-
-    # Create session for vieweruser
-    sess_viewer = database.create_session("vieweruser", db_path=TEST_DB_PATH)["token"]
-    headers_viewer = {"Authorization": f"Bearer {sess_viewer}"}
 
     # Viewer attempts to delete project
     del_res = client.delete(f"/api/projects/{proj_id}", headers=headers_viewer)
@@ -100,7 +103,8 @@ def test_viewer_role_cannot_mutate_project():
 
 
 def test_pydantic_field_length_constraints():
-    sess_user = database.create_session("user", db_path=TEST_DB_PATH)["token"]
+    reg = database.register_user("validuser", "password123", db_path=TEST_DB_PATH)
+    sess_user = reg["token"]
     headers_user = {"Authorization": f"Bearer {sess_user}"}
 
     # Attempt to create a card with an oversized title (>200 chars)
@@ -117,24 +121,23 @@ def test_pydantic_field_length_constraints():
 
 
 def test_pagination_limit_enforcement():
-    proj = database.create_project("testuser", name="Pagination Test", db_path=TEST_DB_PATH)
-    proj_id = proj["id"]
-
-    sess_user = database.create_session("testuser", db_path=TEST_DB_PATH)["token"]
+    reg = database.register_user("testuser", "password123", db_path=TEST_DB_PATH)
+    proj_id = database.get_projects("testuser", db_path=TEST_DB_PATH)[0]["id"]
+    sess_user = reg["token"]
     headers_user = {"Authorization": f"Bearer {sess_user}"}
 
     # Request with oversized limit=500
     res = client.get(f"/api/projects/{proj_id}/activity?limit=500", headers=headers_user)
     assert res.status_code == 200
-    # Response should succeed but backend caps safe limit <= 100
     assert "activities" in res.json()
 
 
 def test_ai_chat_permission_check():
-    proj = database.create_project("owneruser", name="AI Guarded Project", db_path=TEST_DB_PATH)
-    proj_id = proj["id"]
+    reg_owner = database.register_user("owneruser", "password123", db_path=TEST_DB_PATH)
+    proj_id = database.get_projects("owneruser", db_path=TEST_DB_PATH)[0]["id"]
 
-    sess_unauth = database.create_session("unauthorized_user", db_path=TEST_DB_PATH)["token"]
+    reg_unauth = database.register_user("unauthorized_user", "password123", db_path=TEST_DB_PATH)
+    sess_unauth = reg_unauth["token"]
     headers_unauth = {"Authorization": f"Bearer {sess_unauth}"}
 
     # Unauthorized user attempts AI chat on private project

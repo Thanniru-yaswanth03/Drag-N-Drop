@@ -17,10 +17,10 @@ describe("api client", () => {
       json: async () => mockBoardResponse,
     } as Response);
 
-    const result = await fetchBoard("user");
+    const result = await fetchBoard("board-test-123");
     expect(result).toEqual(mockBoardResponse);
     expect(fetch).toHaveBeenCalledWith(
-      expect.stringMatching(/\/api\/board\?username=user/),
+      expect.stringMatching(/\/api\/board\?project_id=board-test-123/),
       expect.objectContaining({ headers: expect.any(Object) })
     );
   });
@@ -30,10 +30,10 @@ describe("api client", () => {
       ok: true,
     } as Response);
 
-    const success = await saveBoard("user", initialData);
+    const success = await saveBoard(initialData, "board-test-123");
     expect(success).toBe(true);
     expect(fetch).toHaveBeenCalledWith(
-      expect.stringMatching(/\/api\/board\?username=user/),
+      expect.stringMatching(/\/api\/board\?project_id=board-test-123/),
       expect.objectContaining({
         method: "PUT",
       })

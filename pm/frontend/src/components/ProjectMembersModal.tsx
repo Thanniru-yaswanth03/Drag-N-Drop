@@ -40,11 +40,11 @@ export const ProjectMembersModal = ({
   const loadMembers = useCallback(async () => {
     if (!projectId || !isOpen) return;
     setLoading(true);
-    const data = await fetchProjectMembers(projectId, currentUsername);
+    const data = await fetchProjectMembers(projectId);
     setMembers(data.members);
     setUserRole(data.userRole);
     setLoading(false);
-  }, [projectId, isOpen, currentUsername]);
+  }, [projectId, isOpen]);
 
   useEffect(() => {
     if (isOpen && projectId) {
@@ -64,8 +64,7 @@ export const ProjectMembersModal = ({
     const res = await addProjectMemberApi(
       projectId,
       targetUsername.trim(),
-      selectedRole,
-      currentUsername
+      selectedRole
     );
 
     if (res.success) {
@@ -80,7 +79,7 @@ export const ProjectMembersModal = ({
   const handleRemoveMember = async (usernameToRemove: string) => {
     if (!confirm(`Are you sure you want to remove @${usernameToRemove} from this project?`)) return;
     setError(null);
-    const res = await removeProjectMemberApi(projectId, usernameToRemove, currentUsername);
+    const res = await removeProjectMemberApi(projectId, usernameToRemove);
 
     if (res.success) {
       loadMembers();
