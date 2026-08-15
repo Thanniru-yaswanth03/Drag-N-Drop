@@ -28,6 +28,11 @@ def verify_password(password: str, password_hash: str, salt: str) -> bool:
 
 def get_db_connection(db_path: Path = None):
     target_path = db_path if db_path is not None else DB_PATH
+    if hasattr(target_path, "parent") and not target_path.parent.exists():
+        try:
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
     conn = sqlite3.connect(target_path, timeout=15.0)
     conn.row_factory = sqlite3.Row
     return conn
@@ -509,6 +514,16 @@ def get_projects(user_id: str = "user", db_path: Path = None):
         (internal_user_id,),
     )
     rows = cursor.fetchall()
+    if not rows:
+        conn.close()
+        seed_default_board(user_id, db_path=db_path)
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, name, created_at, updated_at FROM boards WHERE user_id = ? ORDER BY created_at ASC",
+            (internal_user_id,),
+        )
+        rows = cursor.fetchall()
     conn.close()
 
     return [
@@ -772,6 +787,13 @@ def save_board(user_id: str, board_data: dict, db_path: Path = None, project_id:
     else:
         cursor.execute("SELECT id FROM boards WHERE user_id = ? ORDER BY created_at ASC", (internal_user_id,))
         board_row = cursor.fetchone()
+        if not board_row:
+            conn.close()
+            seed_default_board(user_id, db_path=db_path)
+            conn = get_db_connection(db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM boards WHERE user_id = ? ORDER BY created_at ASC", (internal_user_id,))
+            board_row = cursor.fetchone()
         if not board_row:
             conn.close()
             return None

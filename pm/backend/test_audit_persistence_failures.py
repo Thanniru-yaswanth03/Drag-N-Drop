@@ -16,6 +16,7 @@ class TestAuditPersistenceFailures(unittest.TestCase):
         main.LOGIN_ATTEMPTS.clear()
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.db_path = Path(self.tmp_dir.name) / "audit_test_pm.db"
+        self.orig_db_path = database.DB_PATH
         database.DB_PATH = self.db_path
         database.init_db(self.db_path)
         self.username = "audit_user"
@@ -25,6 +26,7 @@ class TestAuditPersistenceFailures(unittest.TestCase):
         self.client = TestClient(app)
 
     def tearDown(self):
+        database.DB_PATH = self.orig_db_path
         self.tmp_dir.cleanup()
 
     def test_A_delete_single_default_card_and_refresh(self):

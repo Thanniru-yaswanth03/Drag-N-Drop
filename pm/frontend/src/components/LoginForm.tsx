@@ -36,10 +36,11 @@ export const LoginForm = ({ onLogin }: LoginFormProps) => {
         }
 
         const targetUser = regRes.user || cleanUser;
+        localStorage.setItem("pm_auth_user", targetUser);
         const success = await onLogin(targetUser, password);
-        if (!success) {
-          setError("Account created! Please click Sign In to enter.");
-          setIsRegistering(false);
+        if (!success && regRes.token) {
+          // Registration already generated valid token, force reload to complete sign-in
+          window.location.reload();
         }
         return;
       }

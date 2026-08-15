@@ -18,9 +18,9 @@ export const getApiUrl = (path: string) => {
       (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") &&
       window.location.protocol === "http:"
     ) {
-      return `http://127.0.0.1:8000${path}`;
+      return `http://127.0.0.1:8001${path}`;
     }
-    if (window.location.port === "8000") {
+    if (window.location.port === "8001" || window.location.port === "8000") {
       return path;
     }
     return `https://drag-n-drop-28p3.onrender.com${path}`;
@@ -79,6 +79,10 @@ export async function registerApi(username: string, password: string) {
 function checkUnauthorized(response: Response) {
   if (response.status === 401 && typeof localStorage !== "undefined") {
     localStorage.removeItem("pm_auth_token");
+    localStorage.removeItem("pm_auth_user");
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("pm_auth_unauthorized"));
+    }
   }
 }
 

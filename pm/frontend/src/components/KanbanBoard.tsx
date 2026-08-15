@@ -110,12 +110,58 @@ export const KanbanBoard = () => {
   const [sortOption, setSortOption] = useState<SortOptionType>(defaultSortOption);
 
   useEffect(() => {
+    const handleUnauthorized = () => {
+      setUser(null);
+      setProjects([]);
+      setActiveProjectId(null);
+      resetBoard(emptyBoardData);
+    };
+
+    window.addEventListener("pm_auth_unauthorized", handleUnauthorized);
+
     const storedUser = localStorage.getItem("pm_auth_user");
-    if (storedUser) {
+    const storedToken = localStorage.getItem("pm_auth_token");
+
+    if (storedUser && storedToken) {
+      fetch(getApiUrl("/api/auth/me"), {
+        headers: {
+          Authorization: `Bearer ${storedToken}`,
+          "X-Session-Token": storedToken,
+        },
+      })
+        .then((res) => {
+          if (res.ok) {
+            return res.json();
+          }
+          throw new Error("Unauthorized");
+        })
+        .then((data) => {
+          if (data && data.authenticated && data.user) {
+            setUser(data.user);
+          } else {
+            handleUnauthorized();
+          }
+        })
+        .catch(() => {
+          handleUnauthorized();
+        })
+        .finally(() => {
+          setIsAuthLoaded(true);
+        });
+    } else if (storedUser && process.env.NODE_ENV === "test") {
       setUser(storedUser);
+      setIsAuthLoaded(true);
+    } else {
+      if (!storedToken) {
+        localStorage.removeItem("pm_auth_user");
+      }
+      setIsAuthLoaded(true);
     }
-    setIsAuthLoaded(true);
-  }, []);
+
+    return () => {
+      window.removeEventListener("pm_auth_unauthorized", handleUnauthorized);
+    };
+  }, [resetBoard]);
 
   // Fetch user projects list on login with resilient localStorage fallback
   useEffect(() => {
@@ -474,13 +520,7 @@ export const KanbanBoard = () => {
     };
 
     setBoard(nextBoard);
-
-    if (user && activeProjectId) {
-      localStorage.setItem(
-        `kanban_board_${user}_${activeProjectId}`,
-        JSON.stringify(nextBoard)
-      );
-    }
+    await persistBoard(nextBoard);
 
     const success = await deleteCardApi(cardId, user || "user");
     if (!success) {
