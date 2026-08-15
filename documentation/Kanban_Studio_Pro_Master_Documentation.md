@@ -16,7 +16,7 @@
 - **Real-Time WebSockets**: Instant live updates broadcast across connected client sessions.
 - **Embedded AI Assistant**: Conversational AI parsing natural language commands into board actions.
 - **Activity Audit Trail**: Automatic logging of all board modifications and team notifications.
-- **Cross-Platform Responsive UX**: Glassmorphism aesthetic with theme toggling and mobile vertical stacked layout.
+- **Cross-Platform Responsive UX**: Glassmorphism aesthetic with theme toggling, mobile zoom prevention, and mobile vertical stacked layout.
 
 ---
 
@@ -26,13 +26,13 @@
 | :--- | :--- | :--- |
 | **Frontend Framework** | Next.js 16 (Turbopack), React 19, TypeScript | App Router client SPA, TypeScript type safety, and optimized Turbopack build. |
 | **Styling & UI** | TailwindCSS v4, CSS Modules, Lucide Icons | Custom design system, glassmorphism card surfaces, and dark/light mode tokens. |
-| **Drag & Drop** | `@dnd-kit/core`, `@dnd-kit/sortable` | Touch & pointer sensors (`delay: 150ms`, `tolerance: 5px`) for desktop & mobile. |
+| **Drag & Drop** | `@dnd-kit/core`, `@dnd-kit/sortable` | Touch & pointer sensors (`delay: 200ms`, `tolerance: 8px`, `touch-action: none`) for desktop & mobile. |
 | **Backend Framework** | FastAPI (Python 3.13), Uvicorn ASGI | Asynchronous REST routing, WebSocket connection handling, and rate limiting. |
 | **Database** | SQLite3 (WAL Mode), Python `sqlite3` module | Persistent storage for users, projects, columns, cards, members, and activity logs. |
 | **AI Integration** | Rule Engine + Google Gemini API | Converts natural text prompts into structured JSON board mutation payloads. |
 | **Containerization** | Docker (`python:3.13-slim`) | Standardized Linux container packaging backend code and dependencies. |
 | **Cloud Hosting** | Render.com (Backend) & Vercel (Frontend) | Docker container API deployment on Render + Edge CDN distribution on Vercel. |
-| **Testing Suite** | Pytest (39), Vitest (44), Playwright (14) | 97 automated unit, component, integration, data persistence, and E2E browser tests. |
+| **Testing Suite** | Pytest (62), Vitest (44), Playwright (14) | 120 automated unit, component, integration, data persistence, and E2E browser tests. |
 
 ---
 
@@ -69,12 +69,12 @@ Drag_N_Drop/
         ├── src/
         │   ├── app/
         │   │   ├── page.tsx           # Next.js main page shell
-        │   │   ├── layout.tsx         # Next.js root layout
-        │   │   └── globals.css        # Global CSS, theme variables, mobile layout rules
+        │   │   ├── layout.tsx         # Next.js root layout with mobile viewport scale metadata
+        │   │   └── globals.css        # Global CSS, theme variables, 16px mobile input rules, vertical mobile columns
         │   ├── components/
         │   │   ├── KanbanBoard.tsx    # Core board orchestrator & dnd-kit context
         │   │   ├── KanbanColumn.tsx   # Column container component
-        │   │   ├── KanbanCard.tsx     # Drag-and-drop sortable card component
+        │   │   ├── KanbanCard.tsx     # Drag-and-drop sortable card component with touch-action: none
         │   │   ├── AIAssistantWidget.tsx # Floating AI chat drawer
         │   │   ├── LoginForm.tsx      # Authentication sign-in/register modal
         │   │   ├── ProjectSwitcher.tsx# Multi-project selection dropdown & modal
@@ -99,9 +99,9 @@ Drag_N_Drop/
 
 ### 🔑 Auth & Session Management
 - **Registration & Sign-In**: Users register with username and password. Usernames are automatically lower-cased and sanitized.
-- **Password Hashing**: Passwords are hashed with PBKDF2-HMAC-SHA256 (`100,000` iterations) and salted.
+- **Password Hashing**: Passwords are hashed with PBKDF2-HMAC-SHA256 (`100,000` iterations) and salted per user.
 - **Header Authentication**: Active sessions issue `secrets.token_hex(32)` tokens passed via `Authorization: Bearer` and `X-Session-Token` headers.
-- **Standalone Fallback**: If backend API is unreachable, local user accounts persist in `localStorage` (`pm_registered_users`).
+- **Default Account Provisioning**: Auto-provisioned system accounts (`user`, `testuser`) initialize with clean password hashing (`password`) and allow account registration overwrites.
 
 ### 💾 Persistent Database State Engine
 - **Single Source of Truth**: Guaranteed SQLite database state loading on login and project switching, eliminating stale demo card overwrites.
@@ -109,7 +109,8 @@ Drag_N_Drop/
 
 ### 📱 Responsive Mobile Layout & Touch Drag & Drop
 - **Vertical Mobile Stack**: On screens `< 1024px`, columns stack vertically (`flex flex-col gap-6 w-full`) to eliminate horizontal scrollbars.
-- **TouchSensor Integration**: Touch activations require `delay: 150ms` and `tolerance: 5px`, allowing smooth page scrolling without accidental drags.
+- **TouchSensor Integration**: Touch activations require `delay: 200ms` and `tolerance: 8px` with `touch-action: none` on card surfaces, allowing smooth page scrolling without accidental touch drag glitches.
+- **Mobile Viewport Zoom Prevention**: Next.js layout metadata (`width: device-width`, `initialScale: 1`, `maximumScale: 1`, `userScalable: false`) + `-webkit-text-size-adjust: 100%` + minimum `16px` font-size on input focus prevents iOS Safari auto-zooming.
 
 ### 🛡️ Security & RBAC Permission System
 - Projects check user roles (`owner`, `member`, `viewer`).
@@ -121,9 +122,9 @@ Drag_N_Drop/
 
 ---
 
-## 5. Testing Architecture (97 Total Tests — 100% Pass Rate)
+## 5. Testing Architecture (120 Total Tests — 100% Pass Rate)
 
-1. **Pytest (39 Backend Tests)**: Verifies REST endpoints, database schema, PBKDF2 hashing, RBAC permissions, cryptographic session tokens, persistent data loss verification (`test_card_persistence_across_logout_and_login`), IDOR isolation, and Part 28 adversarial security scenarios.
+1. **Pytest (62 Backend Tests)**: Verifies REST endpoints, database schema, PBKDF2 hashing, RBAC permissions, cryptographic session tokens, persistent data loss verification (`test_card_persistence_across_logout_and_login`), IDOR isolation, default account password hashing, and Part 28 adversarial security scenarios.
 2. **Vitest (44 Frontend Tests across 12 Suites)**: Tests React components, filter utilities, undo/redo state hooks, activity modals, notification center, project switcher, and auth form handlers.
 3. **Playwright (14 E2E Tests)**: Automates Chromium browser interactions covering sign-in, card dragging, filtering, mobile viewport rendering, and multi-user login workflows.
 
@@ -147,5 +148,4 @@ Vercel hosts the Next.js static bundle on an Edge CDN. The environment variable 
 - **Release Classification**: **`PRODUCTION READY`**
 - **Security Audit Status**: 0 Critical (P0) or High (P1) Vulnerabilities
 - **Part 28 Verification**: Passed independent adversarial security audit (`test_part28_adversarial_security.py`).
-- **Part 29 Verification**: Passed final production deployment, test suite execution (97 automated tests passing 100%), persistent data loss regression testing, master documentation sync, and repository GitHub release packaging.
-- **Part 29 Verification**: Passed final production deployment, test suite execution (96 automated tests passing 100%), master documentation sync, and repository GitHub release packaging.
+- **Part 29 Verification**: Passed final production deployment, test suite execution (120 automated tests passing 100%), persistent data loss regression testing, master documentation sync, and repository GitHub release packaging.

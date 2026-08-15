@@ -27,8 +27,8 @@ A modern, enterprise-grade Kanban project management application featuring dynam
 ## ✨ Features
 
 - 🖱️ **Drag and Drop Engine**: Smooth card reordering across workflow columns powered by `@dnd-kit`.
-- 📱 **Mobile Touch Optimization**: Vertical stacked column layout on mobile screens with touch-sensor activation delay (`150ms`).
-- 🔐 **Authentication & Cryptographic Sessions**: Cryptographically random session token generation (`secrets.token_hex(32)`), session token headers (`Authorization: Bearer` & `X-Session-Token`), session revocation on logout, PBKDF2-HMAC-SHA256 password hashing, user registration, and identity validation.
+- 📱 **Mobile Touch & Viewport Optimization**: Vertical stacked column layout on mobile screens (`< 1024px`), touch-sensor activation constraint (`delay: 200ms`, `tolerance: 8px`), `touch-action: none` on card elements to eliminate touch drag glitches, viewport scale controls (`initial-scale=1`, `maximum-scale=1`, `user-scalable=no`), and `-webkit-text-size-adjust: 100%` input rules to prevent iOS Safari auto-zooming.
+- 🔐 **Authentication & Cryptographic Sessions**: Cryptographically random session token generation (`secrets.token_hex(32)`), session token headers (`Authorization: Bearer` & `X-Session-Token`), session revocation on logout, PBKDF2-HMAC-SHA256 password hashing, user registration with default account overwrite support, and identity validation.
 - 💾 **Persistent Database State**: Guaranteed SQLite database persistence across login/logout sessions, project switching, and multi-user interactions with clean state hydration and loading fallbacks.
 - 📁 **Multi-Project Workspace**: Create, switch, rename, and isolate independent Kanban project boards.
 - 🤖 **AI Kanban Assistant & Model Failover**: Conversational AI parsing natural language prompts with model failover stack (`openai/gpt-4o-mini` -> `meta-llama/llama-3.3-70b-instruct` -> `openrouter/auto` -> Smart Local NLP).
@@ -53,7 +53,8 @@ A modern, enterprise-grade Kanban project management application featuring dynam
 - **Database**: SQLite3 (WAL Mode), Python `sqlite3` driver
 - **Security**: Cryptographic Session Tokens, PBKDF2-HMAC-SHA256 password hashing (`100,000` iterations)
 - **AI Integration**: OpenRouter API (GPT-4o-mini) with Failover Stack & Smart Local NLP
-- **Testing**: Pytest (39 tests, including Part 28 Adversarial Security suite & persistent data loss verification)
+- **Testing**: Pytest (62 tests, including Part 28 Adversarial Security suite & persistent data loss verification)
+
 
 ### DevOps & Cloud Infrastructure
 - **Containerization**: Docker (`python:3.13-slim`)
