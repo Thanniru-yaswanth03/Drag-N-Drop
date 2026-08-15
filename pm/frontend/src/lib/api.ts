@@ -255,11 +255,11 @@ export async function updateCardApi(
     tags?: string[];
     assignee?: string | null;
   },
-  username: string = "user"
+  username?: string
 ) {
   try {
-    const activeUser = username !== "user" ? username : (typeof localStorage !== "undefined" ? localStorage.getItem("pm_auth_user") || "user" : "user");
-    const response = await fetch(getApiUrl(`/api/cards/${encodeURIComponent(cardId)}?username=${encodeURIComponent(activeUser)}`), {
+    const queryParam = username ? `?username=${encodeURIComponent(username)}` : "";
+    const response = await fetch(getApiUrl(`/api/cards/${encodeURIComponent(cardId)}${queryParam}`), {
       method: "PUT",
       headers: getAuthHeaders(),
       body: JSON.stringify(cardData),
@@ -275,10 +275,10 @@ export async function updateCardApi(
   return null;
 }
 
-export async function deleteCardApi(cardId: string, username: string = "user") {
+export async function deleteCardApi(cardId: string, username?: string) {
   try {
-    const activeUser = username !== "user" ? username : (typeof localStorage !== "undefined" ? localStorage.getItem("pm_auth_user") || "user" : "user");
-    const response = await fetch(getApiUrl(`/api/cards/${encodeURIComponent(cardId)}?username=${encodeURIComponent(activeUser)}`), {
+    const queryParam = username ? `?username=${encodeURIComponent(username)}` : "";
+    const response = await fetch(getApiUrl(`/api/cards/${encodeURIComponent(cardId)}${queryParam}`), {
       method: "DELETE",
       headers: getAuthFetchHeaders(),
     });
@@ -286,6 +286,50 @@ export async function deleteCardApi(cardId: string, username: string = "user") {
     return response.ok;
   } catch (error) {
     console.error("Error deleting card via API:", error);
+    return false;
+  }
+}
+
+export async function moveCardApi(cardId: string, columnId: string, position: number = 0) {
+  try {
+    const response = await fetch(getApiUrl(`/api/cards/${encodeURIComponent(cardId)}/move`), {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ columnId, position }),
+    });
+    checkUnauthorized(response);
+    return response.ok;
+  } catch (error) {
+    console.error("Error moving card via API:", error);
+    return false;
+  }
+}
+
+export async function updateColumnApi(columnId: string, title: string) {
+  try {
+    const response = await fetch(getApiUrl(`/api/columns/${encodeURIComponent(columnId)}`), {
+      method: "PATCH",
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ title }),
+    });
+    checkUnauthorized(response);
+    return response.ok;
+  } catch (error) {
+    console.error("Error updating column via API:", error);
+    return false;
+  }
+}
+
+export async function clearColumnApi(columnId: string) {
+  try {
+    const response = await fetch(getApiUrl(`/api/columns/${encodeURIComponent(columnId)}/clear`), {
+      method: "POST",
+      headers: getAuthHeaders(),
+    });
+    checkUnauthorized(response);
+    return response.ok;
+  } catch (error) {
+    console.error("Error clearing column via API:", error);
     return false;
   }
 }
@@ -298,7 +342,7 @@ export type ActivityItem = {
   entityType: string;
   entityId: string;
   message: string;
-  details?: Record<string, any>;
+  details?: Record<string, unknown>;
   createdAt?: string | null;
 };
 

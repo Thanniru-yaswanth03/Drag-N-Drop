@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   type ProjectMember,
   fetchProjectMembers,
@@ -37,18 +37,20 @@ export const ProjectMembersModal = ({
   const [selectedRole, setSelectedRole] = useState<string>("member");
   const [error, setError] = useState<string | null>(null);
 
-  const loadMembers = async () => {
+  const loadMembers = useCallback(async () => {
     if (!projectId || !isOpen) return;
     setLoading(true);
     const data = await fetchProjectMembers(projectId, currentUsername);
     setMembers(data.members);
     setUserRole(data.userRole);
     setLoading(false);
-  };
+  }, [projectId, isOpen, currentUsername]);
 
   useEffect(() => {
-    loadMembers();
-  }, [projectId, isOpen, currentUsername]);
+    if (isOpen && projectId) {
+      queueMicrotask(() => loadMembers());
+    }
+  }, [isOpen, projectId, loadMembers]);
 
   if (!isOpen) return null;
 

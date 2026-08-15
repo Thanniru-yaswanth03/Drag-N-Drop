@@ -8,14 +8,31 @@ describe("KanbanBoard", () => {
   beforeEach(() => {
     localStorage.clear();
     localStorage.setItem("pm_auth_user", "user");
-    global.fetch = vi.fn().mockImplementation((url) => {
+    global.fetch = vi.fn().mockImplementation((url, options) => {
       if (typeof url === "string" && url.includes("/api/board")) {
         return Promise.resolve({
           ok: true,
           json: async () => ({ columns: [], cards: {} }),
         } as Response);
       }
-      return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
+      if (typeof url === "string" && url.includes("/api/cards") && options?.method === "POST") {
+        const body = options?.body ? JSON.parse(options.body) : {};
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            card: {
+              id: body.cardId || "card-test-1",
+              title: body.title || "New card",
+              details: body.details || "",
+              description: body.details || "",
+              priority: body.priority || "medium",
+              columnId: body.columnId,
+            },
+          }),
+        } as Response);
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ success: true }) } as Response);
     });
   });
 

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
   try {
@@ -8,7 +8,7 @@ test.beforeEach(async ({ page }) => {
   }
 });
 
-const login = async (page: any) => {
+const login = async (page: Page) => {
   await page.goto("/");
   await page.getByLabel("Username").fill("user");
   await page.getByLabel("Password").fill("password");

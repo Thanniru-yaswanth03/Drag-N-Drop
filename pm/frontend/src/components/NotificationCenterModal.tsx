@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   type NotificationItem,
   fetchNotificationsApi,
@@ -32,18 +32,20 @@ export const NotificationCenterModal = ({
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
 
-  const loadNotifications = async () => {
+  const loadNotifications = useCallback(async () => {
     if (!username || !isOpen) return;
     setLoading(true);
     const data = await fetchNotificationsApi(username);
     setNotifications(data.notifications);
     setUnreadCount(data.unreadCount);
     setLoading(false);
-  };
+  }, [username, isOpen]);
 
   useEffect(() => {
-    loadNotifications();
-  }, [username, isOpen]);
+    if (isOpen && username) {
+      queueMicrotask(() => loadNotifications());
+    }
+  }, [isOpen, username, loadNotifications]);
 
   if (!isOpen) return null;
 

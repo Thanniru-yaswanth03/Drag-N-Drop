@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 type UseWebSocketOptions = {
   projectId: string | null;
   username: string | null;
-  onMessage?: (data: any) => void;
+  onMessage?: (data: unknown) => void;
 };
 
 export function useWebSocket({ projectId, username, onMessage }: UseWebSocketOptions) {
@@ -13,13 +13,14 @@ export function useWebSocket({ projectId, username, onMessage }: UseWebSocketOpt
   const [status, setStatus] = useState<"connected" | "connecting" | "disconnected">("disconnected");
   const wsRef = useRef<WebSocket | null>(null);
 
-  const connect = useCallback(() => {
-    if (!projectId || !username) return;
+  useEffect(() => {
+    if (!projectId || !username) {
+      return;
+    }
 
-    setStatus("connecting");
     const envUrl = process.env.NEXT_PUBLIC_API_URL;
-    let wsHost = window.location.host;
-    let wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    let wsHost = typeof window !== "undefined" ? window.location.host : "";
+    let wsProtocol = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:";
 
     if (envUrl) {
       const cleanEnv = envUrl.replace(/\/$/, "");
@@ -72,13 +73,8 @@ export function useWebSocket({ projectId, username, onMessage }: UseWebSocketOpt
         setStatus("disconnected");
       };
     } catch {
-      setIsConnected(false);
-      setStatus("disconnected");
+      // Ignore initial synchronous connection error
     }
-  }, [projectId, username, onMessage]);
-
-  useEffect(() => {
-    connect();
 
     return () => {
       if (wsRef.current) {
@@ -86,9 +82,9 @@ export function useWebSocket({ projectId, username, onMessage }: UseWebSocketOpt
         wsRef.current = null;
       }
     };
-  }, [connect]);
+  }, [projectId, username, onMessage]);
 
-  const send = useCallback((data: any) => {
+  const send = useCallback((data: unknown) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(data));
     }
@@ -96,3 +92,4 @@ export function useWebSocket({ projectId, username, onMessage }: UseWebSocketOpt
 
   return { isConnected, status, send };
 }
+

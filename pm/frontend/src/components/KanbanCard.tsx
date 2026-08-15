@@ -144,12 +144,6 @@ export const KanbanCard = memo(
           )}
         </div>
 
-        {(card.createdAt || card.updatedAt) && (
-          <div className="mt-1.5 text-[9px] text-[var(--gray-text)] opacity-60 flex justify-between">
-            {card.createdAt && <span>Created: {new Date(card.createdAt).toLocaleDateString()}</span>}
-            {card.updatedAt && <span>Updated: {new Date(card.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>}
-          </div>
-        )}
       </article>
     );
   },
@@ -162,3 +156,5 @@ export const KanbanCard = memo(
     prev.card.assignee === next.card.assignee &&
     JSON.stringify(prev.card.tags) === JSON.stringify(next.card.tags)
 );
+
+KanbanCard.displayName = "KanbanCard";

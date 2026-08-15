@@ -135,6 +135,15 @@ class CardCreateRequest(BaseModel):
     assignee: Optional[str] = Field(None, max_length=50)
 
 
+class CardMoveRequest(BaseModel):
+    columnId: str = Field(..., max_length=100)
+    position: Optional[int] = Field(0, ge=0)
+
+
+class ColumnUpdateRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=100)
+
+
 class CardUpdateRequest(BaseModel):
     title: Optional[str] = Field(None, max_length=200)
     details: Optional[str] = Field(None, max_length=2000)
@@ -143,6 +152,92 @@ class CardUpdateRequest(BaseModel):
     dueDate: Optional[str] = Field(None, max_length=50)
     tags: Optional[List[str]] = Field(None, max_length=20)
     assignee: Optional[str] = Field(None, max_length=50)
+
+
+@app.post("/api/cards")
+def create_card(payload: CardCreateRequest, request: Request, username: Optional[str] = None):
+    auth_user = get_authenticated_user(request)
+    card_id = payload.cardId or f"card-{secrets.token_hex(8)}"
+    card = database.add_card(
+        user_id=auth_user,
+        column_id=payload.columnId,
+        card_id=card_id,
+        title=payload.title,
+        details=payload.details or payload.description or "",
+        description=payload.description or payload.details or "",
+        priority=payload.priority or "medium",
+        due_date=payload.dueDate,
+        tags=payload.tags or [],
+        assignee=payload.assignee,
+    )
+    return {"success": True, "card": card}
+
+
+@app.put("/api/cards/{card_id}")
+def update_card(card_id: str, payload: CardUpdateRequest, request: Request, username: Optional[str] = None):
+    auth_user = get_authenticated_user(request)
+    res = database.update_card(card_id, payload.model_dump(exclude_unset=True), user_id=auth_user)
+    if not res:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
+    if isinstance(res, dict) and "error" in res:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=res["error"])
+    return {"success": True, "card": res}
+
+
+@app.patch("/api/cards/{card_id}/move")
+@app.put("/api/cards/{card_id}/move")
+async def move_card_endpoint(card_id: str, payload: CardMoveRequest, request: Request):
+    auth_user = get_authenticated_user(request)
+    res = database.move_card(
+        card_id=card_id,
+        destination_column_id=payload.columnId,
+        position=payload.position or 0,
+        user_id=auth_user,
+    )
+    if not res or (isinstance(res, dict) and "error" in res):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN if isinstance(res, dict) and "error" in res else status.HTTP_404_NOT_FOUND,
+            detail=res.get("error", "Card or Column not found") if isinstance(res, dict) else "Card not found",
+        )
+    project_id = res.get("boardId")
+    if project_id:
+        await ws_manager.broadcast_to_project(project_id, {"type": "BOARD_UPDATED", "projectId": project_id, "board": res})
+    return {"success": True, "board": res}
+
+
+@app.patch("/api/columns/{column_id}")
+@app.put("/api/columns/{column_id}")
+async def update_column_endpoint(column_id: str, payload: ColumnUpdateRequest, request: Request):
+    auth_user = get_authenticated_user(request)
+    res = database.update_column(column_id, payload.title, user_id=auth_user)
+    if not res or (isinstance(res, dict) and "error" in res):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN if isinstance(res, dict) and "error" in res else status.HTTP_404_NOT_FOUND,
+            detail=res.get("error", "Column not found") if isinstance(res, dict) else "Column not found",
+        )
+    return {"success": True, "column": res}
+
+
+@app.post("/api/columns/{column_id}/clear")
+async def clear_column_endpoint(column_id: str, request: Request):
+    auth_user = get_authenticated_user(request)
+    res = database.clear_column_cards(column_id, user_id=auth_user)
+    if isinstance(res, dict) and "error" in res:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=res["error"])
+    if not res:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Column not found")
+    return {"success": True}
+
+
+@app.delete("/api/cards/{card_id}")
+def delete_card(card_id: str, request: Request, username: Optional[str] = None):
+    auth_user = get_authenticated_user(request)
+    res = database.delete_card(card_id, user_id=auth_user)
+    if isinstance(res, dict) and "error" in res:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=res["error"])
+    if not res:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
+    return {"success": True, "deleted": card_id}
 
 
 class ProjectItem(BaseModel):
@@ -311,45 +406,6 @@ def reset_board(request: Request, username: Optional[str] = None):
     return database.reset_default_board(auth_user)
 
 
-@app.post("/api/cards")
-def create_card(payload: CardCreateRequest, request: Request, username: Optional[str] = None):
-    auth_user = get_authenticated_user(request)
-    card_id = payload.cardId or f"card-{secrets.token_hex(8)}"
-    card = database.add_card(
-        user_id=auth_user,
-        column_id=payload.columnId,
-        card_id=card_id,
-        title=payload.title,
-        details=payload.details or payload.description or "",
-        description=payload.description or payload.details or "",
-        priority=payload.priority or "medium",
-        due_date=payload.dueDate,
-        tags=payload.tags or [],
-        assignee=payload.assignee,
-    )
-    return {"success": True, "card": card}
-
-
-@app.put("/api/cards/{card_id}")
-def update_card(card_id: str, payload: CardUpdateRequest, request: Request, username: Optional[str] = None):
-    auth_user = get_authenticated_user(request)
-    res = database.update_card(card_id, payload.model_dump(exclude_unset=True), user_id=auth_user)
-    if not res:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
-    if isinstance(res, dict) and "error" in res:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=res["error"])
-    return {"success": True, "card": res}
-
-
-@app.delete("/api/cards/{card_id}")
-def delete_card(card_id: str, request: Request, username: Optional[str] = None):
-    auth_user = get_authenticated_user(request)
-    res = database.delete_card(card_id, user_id=auth_user)
-    if isinstance(res, dict) and "error" in res:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=res["error"])
-    if not res:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Card not found")
-    return {"success": True, "deleted": card_id}
 
 
 @app.post("/api/ai/test")

@@ -28,13 +28,17 @@ import { ProjectMembersModal } from "@/components/ProjectMembersModal";
 import { NotificationCenterModal } from "@/components/NotificationCenterModal";
 import { useUndoRedo } from "@/lib/useUndoRedo";
 import { useWebSocket } from "@/lib/useWebSocket";
-import { createId, emptyBoardData, initialData, moveCard, type Card, type BoardData } from "@/lib/kanban";
+import { emptyBoardData, moveCard, type Card, type BoardData } from "@/lib/kanban";
 import {
   getApiUrl,
   fetchBoard,
   saveBoard,
+  createCardApi,
   deleteCardApi,
   updateCardApi,
+  moveCardApi,
+  updateColumnApi,
+  clearColumnApi,
   fetchProjects,
   createProjectApi,
   updateProjectApi,
@@ -48,14 +52,17 @@ import {
   extractAvailableTags,
   getActiveFilterCount,
   defaultFilterOptions,
-  defaultSortOption,
   type FilterOptions,
   type SortOptionType,
+  defaultSortOption,
 } from "@/lib/filterUtils";
 
 export const KanbanBoard = () => {
-  const [user, setUser] = useState<string | null>(null);
-  const [isAuthLoaded, setIsAuthLoaded] = useState(false);
+  const [user, setUser] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("pm_auth_user");
+  });
+  const [isAuthLoaded, setIsAuthLoaded] = useState(true);
   const {
     state: board,
     set: setBoard,
@@ -67,7 +74,7 @@ export const KanbanBoard = () => {
   } = useUndoRedo<BoardData>(emptyBoardData);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
-  const [isLoadingBoard, setIsLoadingBoard] = useState(false);
+  const [, setIsLoadingBoard] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [editingCard, setEditingCard] = useState<Card | null>(null);
@@ -75,14 +82,15 @@ export const KanbanBoard = () => {
   const [isMembersModalOpen, setIsMembersModalOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
-  const [userRole, setUserRole] = useState<string>("owner");
+  const [, setUserRole] = useState<string>("owner");
   const [aiNotification, setAiNotification] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterOptions>(defaultFilterOptions);
 
   // Real-Time WebSocket Channel
-  const handleWsMessage = useCallback((payload: any) => {
-    if (payload && payload.type === "BOARD_UPDATED" && payload.board && payload.projectId === activeProjectId) {
-      setBoard(payload.board);
+  const handleWsMessage = useCallback((payload: unknown) => {
+    const data = payload as { type?: string; board?: BoardData; projectId?: string };
+    if (data && data.type === "BOARD_UPDATED" && data.board && data.projectId === activeProjectId) {
+      setBoard(data.board);
     }
   }, [setBoard, activeProjectId]);
 
@@ -146,13 +154,15 @@ export const KanbanBoard = () => {
           setIsAuthLoaded(true);
         });
     } else if (storedUser && process.env.NODE_ENV === "test") {
-      setUser(storedUser);
-      setIsAuthLoaded(true);
+      queueMicrotask(() => {
+        setUser(storedUser);
+        setIsAuthLoaded(true);
+      });
     } else {
       if (!storedToken) {
         localStorage.removeItem("pm_auth_user");
       }
-      setIsAuthLoaded(true);
+      queueMicrotask(() => setIsAuthLoaded(true));
     }
 
     return () => {
@@ -163,12 +173,14 @@ export const KanbanBoard = () => {
   // Fetch user projects list on login
   useEffect(() => {
     if (!user) {
-      setProjects([]);
-      setActiveProjectId(null);
+      queueMicrotask(() => {
+        setProjects([]);
+        setActiveProjectId(null);
+      });
       return;
     }
 
-    setIsLoadingBoard(true);
+    queueMicrotask(() => setIsLoadingBoard(true));
     fetchProjects(user)
       .then((projs) => {
         if (Array.isArray(projs) && projs.length > 0) {
@@ -190,8 +202,10 @@ export const KanbanBoard = () => {
   useEffect(() => {
     if (!user || !activeProjectId) return;
 
-    resetBoard(emptyBoardData);
-    setIsLoadingBoard(true);
+    queueMicrotask(() => {
+      resetBoard(emptyBoardData);
+      setIsLoadingBoard(true);
+    });
 
     fetchBoard(user, activeProjectId)
       .then((data) => {
@@ -214,10 +228,9 @@ export const KanbanBoard = () => {
 
   const persistBoard = useCallback(
     async (nextBoard: BoardData) => {
-      const activeUser = user || "user";
-      const activeProj = activeProjectId || `board-${activeUser}`;
+      if (!user) return;
       setIsSyncing(true);
-      const success = await saveBoard(activeUser, nextBoard, activeProj);
+      const success = await saveBoard(user, nextBoard, activeProjectId || undefined);
       setIsSyncing(false);
       if (!success) {
         console.error("Failed to persist board to backend");
@@ -401,7 +414,7 @@ export const KanbanBoard = () => {
     setActiveCardId(event.active.id as string);
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveCardId(null);
 
@@ -409,13 +422,19 @@ export const KanbanBoard = () => {
       return;
     }
 
+    const targetCol = board.columns.find((c) => c.cardIds.includes(over.id as string) || c.id === over.id);
+    const destColumnId = targetCol ? targetCol.id : (over.id as string);
+    const destPosIndex = targetCol ? targetCol.cardIds.indexOf(over.id as string) : 0;
+    const destPosition = destPosIndex >= 0 ? destPosIndex : 0;
+
     const nextColumns = moveCard(board.columns, active.id as string, over.id as string);
     const nextBoard = { ...board, columns: nextColumns };
     setBoard(nextBoard);
-    persistBoard(nextBoard);
+
+    await moveCardApi(active.id as string, destColumnId, destPosition);
   };
 
-  const handleRenameColumn = (columnId: string, title: string) => {
+  const handleRenameColumn = async (columnId: string, title: string) => {
     const nextBoard = {
       ...board,
       columns: board.columns.map((column) =>
@@ -423,56 +442,49 @@ export const KanbanBoard = () => {
       ),
     };
     setBoard(nextBoard);
-    persistBoard(nextBoard);
+    await updateColumnApi(columnId, title);
   };
 
-  const handleAddCard = (columnId: string, title: string, details: string) => {
+  const handleAddCard = async (columnId: string, title: string, details: string) => {
+    if (!user) return;
     setFilters(defaultFilterOptions);
     setSortOption(defaultSortOption);
-    const id = createId("card");
-    const now = new Date().toISOString();
-    const nextBoard = {
-      ...board,
-      cards: {
-        ...board.cards,
-        [id]: {
-          id,
-          title,
-          details: details || "No details yet.",
-          description: details || "No details yet.",
-          priority: "medium" as const,
-          createdAt: now,
-          updatedAt: now,
+    const createdCard = await createCardApi(user, columnId, title, details);
+    if (createdCard) {
+      const id = createdCard.id;
+      setBoard((prev) => ({
+        ...prev,
+        cards: {
+          ...prev.cards,
+          [id]: createdCard,
         },
-      },
-      columns: board.columns.map((column) =>
-        column.id === columnId
-          ? { ...column, cardIds: [...column.cardIds, id] }
-          : column
-      ),
-    };
-    setBoard(nextBoard);
-    persistBoard(nextBoard);
+        columns: prev.columns.map((col) =>
+          col.id === columnId
+            ? { ...col, cardIds: col.cardIds.includes(id) ? col.cardIds : [...col.cardIds, id] }
+            : col
+        ),
+      }));
+    }
   };
 
   const handleDeleteCard = async (columnId: string, cardId: string) => {
-    const nextCards = Object.fromEntries(
-      Object.entries(board.cards).filter(([id]) => id !== cardId)
-    );
-    const nextColumns = board.columns.map((column) => ({
-      ...column,
-      cardIds: column.cardIds.filter((id) => id !== cardId),
-    }));
-    const nextBoard: BoardData = {
-      columns: nextColumns,
-      cards: nextCards,
-    };
-
-    setBoard(nextBoard);
-    await persistBoard(nextBoard);
-
-    const success = await deleteCardApi(cardId, user || "user");
-    if (!success) {
+    if (!user) return;
+    const success = await deleteCardApi(cardId, user);
+    if (success) {
+      setBoard((prev) => {
+        const nextCards = Object.fromEntries(
+          Object.entries(prev.cards).filter(([id]) => id !== cardId)
+        );
+        const nextColumns = prev.columns.map((column) => ({
+          ...column,
+          cardIds: column.cardIds.filter((id) => id !== cardId),
+        }));
+        return {
+          columns: nextColumns,
+          cards: nextCards,
+        };
+      });
+    } else {
       console.error(`Failed to delete card ${cardId} on server.`);
     }
   };
@@ -480,19 +492,19 @@ export const KanbanBoard = () => {
   const handleClearColumn = async (columnId: string) => {
     const targetCol = board.columns.find((c) => c.id === columnId);
     if (!targetCol) return;
-    const removedIds = new Set(targetCol.cardIds);
-    const nextCards = Object.fromEntries(
-      Object.entries(board.cards).filter(([id]) => !removedIds.has(id))
-    );
-    const nextColumns = board.columns.map((column) =>
-      column.id === columnId ? { ...column, cardIds: [] } : column
-    );
-    const nextBoard: BoardData = {
-      columns: nextColumns,
-      cards: nextCards,
-    };
-    setBoard(nextBoard);
-    await persistBoard(nextBoard);
+    const success = await clearColumnApi(columnId);
+    if (success) {
+      const removedIds = new Set(targetCol.cardIds);
+      setBoard((prev) => ({
+        ...prev,
+        cards: Object.fromEntries(
+          Object.entries(prev.cards).filter(([id]) => !removedIds.has(id))
+        ),
+        columns: prev.columns.map((col) =>
+          col.id === columnId ? { ...col, cardIds: [] } : col
+        ),
+      }));
+    }
   };
 
   const handleSaveCard = async (
@@ -504,31 +516,7 @@ export const KanbanBoard = () => {
     tags?: string[],
     assignee?: string | null
   ) => {
-    const now = new Date().toISOString();
-    const card = board.cards[cardId];
-    if (!card) return;
-
-    const updatedCard: Card = {
-      ...card,
-      title,
-      details,
-      description: details,
-      priority,
-      dueDate: dueDate !== undefined ? dueDate : card.dueDate,
-      tags: tags !== undefined ? tags : card.tags,
-      assignee: assignee !== undefined ? assignee : card.assignee,
-      updatedAt: now,
-    };
-
-    const nextBoardData: BoardData = {
-      ...board,
-      cards: {
-        ...board.cards,
-        [cardId]: updatedCard,
-      },
-    };
-
-    setBoard(nextBoardData);
+    if (!user) return;
     const res = await updateCardApi(
       cardId,
       {
@@ -540,9 +528,17 @@ export const KanbanBoard = () => {
         tags,
         assignee,
       },
-      user || "user"
+      user
     );
-    if (!res) {
+    if (res) {
+      setBoard((prev) => ({
+        ...prev,
+        cards: {
+          ...prev.cards,
+          [cardId]: res,
+        },
+      }));
+    } else {
       console.error(`Failed to update card ${cardId} on server.`);
     }
   };
@@ -838,20 +834,20 @@ export const KanbanBoard = () => {
         onClose={() => setIsActivityModalOpen(false)}
         projectId={activeProjectId}
         projectName={projects.find((p) => p.id === activeProjectId)?.name || "Main Project"}
-        username={user || "user"}
+        username={user || ""}
       />
 
       {/* Project Members Modal */}
       <ProjectMembersModal
         projectId={activeProjectId || "default"}
-        currentUsername={user || "user"}
+        currentUsername={user || ""}
         isOpen={isMembersModalOpen}
         onClose={() => setIsMembersModalOpen(false)}
       />
 
       {/* Notifications Modal */}
       <NotificationCenterModal
-        username={user || "user"}
+        username={user || ""}
         isOpen={isNotificationsOpen}
         onClose={() => setIsNotificationsOpen(false)}
         onNotificationsChanged={refreshNotifications}

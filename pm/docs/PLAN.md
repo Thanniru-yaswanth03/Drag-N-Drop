@@ -2068,3 +2068,824 @@ The project is considered complete only when:
 * All major user workflows pass final verification.
 * The project can be confidently presented as a serious full-stack engineering project.
 
+# FINAL PRODUCTION FIX — DRAG N DROP
+
+You are working on:
+
+* GitHub repository: `https://github.com/Thanniru-yaswanth03/Drag-N-Drop`
+* Live frontend: `https://drag-n-drop-lilac.vercel.app/`
+
+This is the FINAL engineering pass.
+
+Do NOT give me another superficial patch. Do NOT tell me “the issue should be fixed” without actually proving it. You are allowed to delete, rewrite, refactor, or replace broken architecture if necessary.
+
+The priority is correctness and persistence, not preserving existing code.
+
+---
+
+## PART 1 — STOP USING MULTIPLE SOURCES OF TRUTH
+
+The application must have exactly ONE source of truth for board/project/card data:
+
+**THE BACKEND DATABASE.**
+
+Use the database as the authoritative persistent state.
+
+Do NOT store board/cards/projects in:
+
+* localStorage
+* sessionStorage
+* hardcoded frontend defaults
+* React initialization data
+* fallback demo data
+* duplicated seed data
+* cached board snapshots
+
+React state may temporarily represent the currently displayed board, but it must always originate from the backend.
+
+localStorage may only be used for authentication/session information if absolutely necessary.
+
+There must never be a second localStorage copy of board data.
+
+---
+
+## PART 2 — REMOVE THE DEFAULT USER COMPLETELY
+
+Remove the hardcoded/demo/default user:
+
+* `user`
+* `testuser`
+* default password `password`
+* `ensure_default_user()`
+* any automatic default account creation
+* any frontend fallback such as `user || "user"`
+* any authentication fallback that silently becomes `"user"`
+
+There must be NO production/demo login automatically created.
+
+Normal authentication must work only through real registered users stored in the database.
+
+If no authenticated user exists:
+
+* do not load a board
+* do not mutate a board
+* do not fall back to another user
+* do not use `"user"` as a default identity
+
+Delete all dead code associated with the old demo user.
+
+---
+
+## PART 3 — REMOVE AUTOMATIC DEFAULT CARD/BOARD RESTORATION
+
+There must be no automatic restoration of deleted cards.
+
+A board may have initial columns when a brand-new project is created, but:
+
+**creating/loading/logging into an existing project must NEVER recreate deleted cards.**
+
+Only an explicit user action such as “Reset Board” may reset a board.
+
+Even then, reset must be intentional and isolated to the selected project.
+
+Audit:
+
+* `seed_default_board`
+* `reset_default_board`
+* initialization logic
+* database startup logic
+* registration logic
+* project creation
+* board loading
+* frontend initialization
+
+Make sure none of them can resurrect previously deleted cards.
+
+---
+
+## PART 4 — FIX THE DELETE BUG PROPERLY
+
+Current delete flow is architecturally wrong because it modifies the React board, sends the entire board to `save_board()`, and then also calls a separate delete-card API.
+
+Remove this duplicated mutation flow.
+
+A card deletion must be ONE authoritative backend operation.
+
+Preferred flow:
+
+```text
+User clicks Delete
+        ↓
+DELETE /api/cards/:cardId
+        ↓
+Backend validates authentication + permission
+        ↓
+Database transaction deletes card
+        ↓
+Backend returns authoritative result
+        ↓
+Frontend updates board from authoritative state
+        ↓
+WebSocket broadcasts the authoritative change
+```
+
+Do NOT:
+
+```text
+save entire board
++
+delete card
+```
+
+Do NOT perform two competing persistence operations for one user action.
+
+---
+
+## PART 5 — FIX THE “ANOTHER CARD APPEARS” BUG
+
+Investigate the WebSocket synchronization system carefully.
+
+Current behavior allows `BOARD_UPDATED` payloads to directly replace frontend state.
+
+Prevent stale WebSocket messages from overwriting newer local/server state.
+
+Implement a safe synchronization strategy.
+
+Every authoritative board update should have a revision/version/timestamp/monotonic sequence identifier.
+
+Frontend must ignore stale updates.
+
+Example:
+
+```text
+server revision: 41
+client revision: 41
+
+delete card
+server revision: 42
+
+receive revision 42
+accept
+
+receive old revision 41
+IGNORE
+```
+
+A stale WebSocket message must NEVER resurrect a deleted card.
+
+Test this specifically.
+
+---
+
+## PART 6 — STOP USING FULL BOARD REPLACEMENT FOR NORMAL MUTATIONS
+
+The current `save_board()` implementation deletes all existing columns/cards and recreates them.
+
+Do NOT use this as the normal mechanism for:
+
+* deleting a card
+* adding a card
+* editing a card
+* moving a card
+* renaming a column
+
+Replace it with atomic CRUD operations.
+
+Use operations such as:
+
+```text
+POST   /api/cards
+PATCH  /api/cards/:id
+DELETE /api/cards/:id
+PATCH  /api/cards/:id/move
+PATCH  /api/columns/:id
+```
+
+Database operations must update only the required rows.
+
+Use transactions where multiple rows must change together.
+
+---
+
+## PART 7 — FIX DRAG/DROP PERSISTENCE
+
+Moving a card must update its database position and column atomically.
+
+Do NOT serialize the entire board and overwrite the database.
+
+A move should contain enough information to perform the operation safely:
+
+```text
+cardId
+sourceColumnId
+destinationColumnId
+destinationPosition
+```
+
+Backend performs the actual database mutation.
+
+After success, return the authoritative state.
+
+Test:
+
+```text
+move → refresh
+move → logout → login
+move → second browser tab
+move → rapid second move
+```
+
+The card must remain exactly where the database says it belongs.
+
+---
+
+## PART 8 — FIX CARD CREATION
+
+Creating a card must:
+
+1. Create the card in the database.
+2. Return the created card.
+3. Update frontend state using that result.
+4. Broadcast the authoritative update if WebSockets are enabled.
+
+Do not create a fake frontend-only card and hope the backend eventually agrees.
+
+If database creation fails, the card must not remain displayed as if it were successfully saved.
+
+---
+
+## PART 9 — FIX CARD EDITING
+
+Editing a card must be persisted through the backend.
+
+Use ONE canonical description field.
+
+Remove the duplicated:
+
+```text
+details
+description
+```
+
+model unless there is a genuine business requirement for both.
+
+Preferred schema:
+
+```text
+id
+title
+description
+priority
+dueDate
+tags
+assignee
+createdAt
+updatedAt
+position
+```
+
+Update the frontend types, backend schema, database schema, API responses, edit modal, card component, tests, and migration logic consistently.
+
+Do not leave compatibility garbage everywhere.
+
+---
+
+## PART 10 — REDESIGN THE CARD UI
+
+Completely redesign the visible Kanban card.
+
+The current card exposes too much metadata and feels cluttered.
+
+Create a cleaner professional card.
+
+Suggested structure:
+
+```text
+┌──────────────────────────────┐
+│ HIGH                    ⋮   │
+│                              │
+│ Build authentication         │
+│ Implement secure login...   │
+│                              │
+│ #backend #security           │
+│                              │
+│ 👤 Yash       📅 Aug 20      │
+└──────────────────────────────┘
+```
+
+Visible card should prioritize:
+
+* priority
+* title
+* short description
+* tags
+* assignee
+* due date
+* compact actions
+
+Move detailed metadata into the edit/details modal.
+
+Do not display unnecessary created/updated timestamps on every card unless they genuinely improve UX.
+
+Maintain drag-and-drop usability.
+
+Make sure Edit/Delete buttons do not accidentally trigger drag operations.
+
+---
+
+## PART 11 — DATABASE MUST BE THE PRODUCTION PERSISTENCE LAYER
+
+The current project uses SQLite.
+
+Audit the production deployment.
+
+If SQLite is being used on Render without durable persistent storage, fix this.
+
+Preferred production solution:
+
+**PostgreSQL**
+
+Use a proper persistent cloud database.
+
+If migrating to PostgreSQL is practical, migrate the application completely.
+
+Do not maintain:
+
+```text
+SQLite + localStorage + PostgreSQL
+```
+
+Use exactly one production database.
+
+If you temporarily retain SQLite for local development, clearly separate:
+
+```text
+development database
+production database
+```
+
+and make production persistence durable.
+
+---
+
+## PART 12 — REMOVE TRACKED PRODUCTION DATABASE STATE
+
+Do not rely on a committed `pm.db` file as production state.
+
+Database contents must not be restored from the Git repository on deployment.
+
+Remove the tracked production database from the application state if it is currently being used that way.
+
+Use migrations/initialization scripts instead.
+
+---
+
+## PART 13 — AUTHENTICATION MUST BE SERVER-AUTHORITATIVE
+
+The frontend must not decide the identity by simply reading a username from localStorage.
+
+The server must derive the authenticated user from the authenticated session/token.
+
+Every protected request must validate:
+
+```text
+session
+→ user
+→ project membership
+→ permission
+→ mutation
+```
+
+Never use fallback usernames.
+
+Never silently mutate data for an unauthenticated user.
+
+---
+
+## PART 14 — PROJECT ISOLATION
+
+Verify that project A can never read or mutate cards from project B.
+
+Test:
+
+```text
+User A
+  Project A
+    Card A
+
+  Project B
+    Card B
+```
+
+Then verify:
+
+* Card A never appears in Project B.
+* Deleting Card A never affects Project B.
+* Switching projects never shows stale cards.
+* WebSocket events contain the correct project ID.
+* Frontend accepts WebSocket updates only for the active project.
+
+---
+
+## PART 15 — WEBSOCKET SAFETY
+
+WebSocket messages must contain:
+
+```text
+projectId
+revision
+eventType
+authoritative payload
+```
+
+Example:
+
+```json
+{
+  "type": "BOARD_UPDATED",
+  "projectId": "project-123",
+  "revision": 42,
+  "board": {}
+}
+```
+
+Frontend must verify:
+
+```text
+message.projectId === activeProjectId
+message.revision >= currentRevision
+```
+
+Ignore stale or unrelated messages.
+
+A WebSocket event must never cause deleted data to return.
+
+---
+
+## PART 16 — UNDO/REDO
+
+Audit undo/redo.
+
+Undo/redo must operate on authoritative board state and persist the resulting mutation correctly.
+
+Do not allow an old undo snapshot to resurrect cards that were deleted after that snapshot unless the user explicitly presses Undo.
+
+Undo/redo must also respect project isolation.
+
+---
+
+## PART 17 — REMOVE DEAD / DUPLICATE CODE
+
+Search the entire repository for:
+
+```text
+localStorage
+sessionStorage
+"user"
+"testuser"
+"password"
+"default"
+"seed"
+"initialData"
+"emptyBoardData"
+"save_board"
+"persistBoard"
+"deleteCard"
+"delete_card"
+"reset"
+```
+
+Classify every occurrence.
+
+Delete obsolete implementations.
+
+Do not keep multiple versions of the same logic.
+
+Do not leave commented-out old implementations.
+
+Do not leave dead compatibility layers from previous Parts.
+
+The final project should have ONE clear implementation of each responsibility.
+
+---
+
+## PART 18 — FIX ERROR HANDLING
+
+Every mutation must distinguish:
+
+```text
+success
+validation error
+authentication error
+authorization error
+network error
+database error
+```
+
+Never silently pretend a failed save succeeded.
+
+Never keep an optimistic card permanently if the backend rejects the operation.
+
+Display useful UI feedback.
+
+---
+
+## PART 19 — TEST THE ACTUAL BUGS
+
+Create automated tests for:
+
+### Delete
+
+```text
+create A in Backlog
+create B in Discovery
+create C in Review
+
+delete A
+
+assert A does not exist
+assert B still exists
+assert C still exists
+assert B remains in Discovery
+assert C remains in Review
+```
+
+Then:
+
+```text
+delete B
+refresh
+assert B is still deleted
+```
+
+Then:
+
+```text
+delete all cards
+refresh
+assert board remains empty
+```
+
+### Persistence
+
+```text
+create
+refresh
+login again
+logout
+login again
+move
+refresh
+edit
+refresh
+delete
+refresh
+```
+
+Every operation must survive.
+
+### WebSocket
+
+Simulate stale updates.
+
+Verify an older board revision cannot overwrite a newer revision.
+
+### Projects
+
+Verify project isolation.
+
+### Authentication
+
+Verify:
+
+```text
+no token
+expired token
+invalid token
+valid token
+logout
+```
+
+---
+
+## PART 20 — TEST DEPLOYMENT, NOT JUST LOCALHOST
+
+Run the tests against the actual production architecture.
+
+Verify:
+
+```text
+Vercel frontend
+↓
+Render/API backend
+↓
+production database
+```
+
+Do not declare completion because localhost works.
+
+Test the deployed application.
+
+---
+
+## PART 21 — CLEAN DEPLOYMENT
+
+Audit:
+
+* environment variables
+* API URL
+* CORS
+* database URL
+* migrations
+* startup initialization
+* Render configuration
+* Vercel configuration
+* WebSocket URL
+* authentication configuration
+
+Remove development-only fallbacks.
+
+Do not expose development secrets.
+
+Do not use wildcard CORS in the final production configuration unless there is an explicit reason.
+
+---
+
+## PART 22 — BUILD AND TEST
+
+Run:
+
+```text
+npm install
+npm run build
+npm test
+```
+
+and all backend tests.
+
+Run lint/type checks if configured.
+
+Fix every relevant error.
+
+Do not hide errors by disabling tests or weakening TypeScript.
+
+---
+
+## PART 23 — FINAL MANUAL QA
+
+Actually use the deployed application.
+
+Test:
+
+### Authentication
+
+* register
+* logout
+* login
+* refresh
+* invalid credentials
+
+### Cards
+
+* add
+* edit
+* delete
+* move
+* clear column
+* reset board
+
+### Persistence
+
+* refresh after every mutation
+* logout/login after every mutation
+* close/reopen browser
+* switch projects
+
+### Synchronization
+
+* two browser tabs
+* mutate from one tab
+* observe the second tab
+* verify stale updates cannot resurrect deleted data
+
+---
+
+## PART 24 — IMPORTANT: DO NOT PATCH A SYMPTOM
+
+If the current architecture prevents reliable persistence:
+
+**REWRITE IT.**
+
+If a file contains broken abstractions:
+
+**DELETE IT AND REBUILD IT.**
+
+If the current `save_board()` model is causing race conditions:
+
+**REMOVE IT FROM NORMAL CRUD FLOW.**
+
+If the WebSocket implementation is unsafe:
+
+**SIMPLIFY OR REWRITE IT.**
+
+If SQLite is unsuitable for the production deployment:
+
+**MIGRATE TO POSTGRESQL.**
+
+Do not preserve broken code merely because it already exists.
+
+---
+
+## PART 25 — FINAL ACCEPTANCE CRITERIA
+
+The application is NOT finished until all of these are true:
+
+* [x] No default/demo `user` account
+* [x] No default `testuser`
+* [x] No hardcoded default password
+* [x] No board/card localStorage persistence
+* [x] Database is the single source of truth
+* [x] Deleted cards never return
+* [x] Deleting one card never causes another card to appear
+* [x] Deleted cards remain deleted after refresh
+* [x] Deleted cards remain deleted after logout/login
+* [x] Added cards persist
+* [x] Edited cards persist
+* [x] Dragged cards persist
+* [x] Projects remain isolated
+* [x] WebSocket cannot overwrite state with stale data
+* [x] No full-board destructive replacement for ordinary CRUD
+* [x] Card creation is atomic
+* [x] Card deletion is atomic
+* [x] Card editing is atomic
+* [x] Card movement is atomic
+* [x] Authentication is server-authoritative
+* [x] No `"user"` fallback
+* [x] No duplicate `details`/`description` model unless genuinely required
+* [x] Card UI redesigned cleanly
+* [x] Production database is actually durable
+* [x] Tracked SQLite database is not being used as production state
+* [x] Backend tests pass
+* [x] Frontend tests pass
+* [x] Build passes
+* [x] Production manual QA passes
+
+---
+
+## FINAL REPORT
+
+After implementing everything, DO NOT simply say “done.”
+
+Give me a report containing:
+
+### 1. Root causes found
+
+List the actual causes of the persistence/deletion problems.
+
+### 2. Files changed
+
+List every file changed.
+
+### 3. Files deleted
+
+List every obsolete/dead file removed.
+
+### 4. Architecture changes
+
+Explain the final persistence architecture.
+
+### 5. Database changes
+
+Explain the schema/migration changes.
+
+### 6. Authentication changes
+
+Explain removal of demo/default authentication.
+
+### 7. Card UI changes
+
+Explain the new card structure.
+
+### 8. Tests executed
+
+Give exact commands and results.
+
+### 9. Production verification
+
+Explain what was tested against the deployed application.
+
+### 10. Remaining issues
+
+If anything remains, explicitly say so.
+
+DO NOT CLAIM “production ready” unless the acceptance criteria above are actually satisfied.
+
+The objective is not to make the code look fixed.
+
+The objective is:
+
+**DELETE MEANS DELETE.
+SAVE MEANS SAVE.
+MOVE MEANS MOVE.
+REFRESH MEANS NOTHING REAPPEARS.
+DATABASE STATE AND UI STATE MUST AGREE.**

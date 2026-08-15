@@ -24,7 +24,7 @@ export const ActivityHistoryModal = ({
 
   useEffect(() => {
     if (isOpen && projectId) {
-      setIsLoading(true);
+      queueMicrotask(() => setIsLoading(true));
       fetchProjectActivity(projectId, username)
         .then((data) => {
           setActivities(data);

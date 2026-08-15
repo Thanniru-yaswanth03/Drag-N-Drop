@@ -35,15 +35,6 @@ function localSmartNLP(userMessage: string, boardData: BoardData): { reply: stri
     return null;
   };
 
-  const matchCard = (text: string) => {
-    for (const [cid, cobj] of Object.entries(cards)) {
-      if (text.includes(cid.toLowerCase()) || text.includes(cobj.title.toLowerCase())) {
-        return { cardId: cid, cardObj: cobj };
-      }
-    }
-    return { cardId: null, cardObj: null };
-  };
-
   // Intent: CLEAR / DELETE / REMOVE / ADD / MOVE
   if (!isQuestion && (lower.includes("clear") || lower.includes("delete") || lower.includes("remove") || lower.includes("wipe"))) {
     const targetCol = matchColumn(lower);
@@ -175,7 +166,7 @@ export const AIAssistantWidget = ({ board, projectId, onBoardUpdate }: AIAssista
       if (data.board_update) {
         onBoardUpdate(data.board_update, data.reply);
       }
-    } catch (error) {
+    } catch {
       // Smart Client-Side NLP Fallback so AI chat NEVER crashes or shows ugly connection error
       const localResult = localSmartNLP(messageText.trim(), board);
       setMessages((prev) => [

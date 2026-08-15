@@ -170,33 +170,6 @@ def init_db(db_path: Path = None):
     # Table creation complete
 
 
-def ensure_default_user(db_path: Path = None):
-    if db_path is not None and db_path != DB_PATH:
-        return
-    conn = get_db_connection(db_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, password_hash, password_salt FROM users WHERE username = ?", ("user",))
-    row = cursor.fetchone()
-
-    salt = secrets.token_hex(16)
-    expected_hash = hash_password("password", salt)
-
-    if not row:
-        user_id = "user-user"
-        cursor.execute(
-            "INSERT INTO users (id, username, password_hash, password_salt) VALUES (?, ?, ?, ?)",
-            (user_id, "user", expected_hash, salt),
-        )
-    else:
-        user_salt = row["password_salt"] or "legacy"
-        if not verify_password("password", row["password_hash"], user_salt):
-            cursor.execute(
-                "UPDATE users SET password_hash = ?, password_salt = ? WHERE username = ?",
-                (expected_hash, salt, "user"),
-            )
-    conn.commit()
-    conn.close()
-    seed_default_board("user", db_path=db_path)
 
 
 def create_session(username: str, db_path: Path = None) -> dict:
@@ -1028,6 +1001,94 @@ def delete_card(card_id: str, user_id: str = "user", db_path: Path = None):
     if check_row is not None:
         raise RuntimeError(f"Database deletion failed for card {card_id}: record still exists after COMMIT")
 
+    return True
+
+
+def move_card(card_id: str, destination_column_id: str, position: int = 0, user_id: str = "user", db_path: Path = None):
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT c.title, c.column_id, col.board_id FROM cards c JOIN columns col ON c.column_id = col.id WHERE c.id = ?", (card_id,))
+    existing = cursor.fetchone()
+    if not existing:
+        conn.close()
+        return None
+
+    project_id = existing["board_id"]
+    if user_id and not check_user_permission(project_id, user_id, "member", db_path=db_path):
+        conn.close()
+        return {"error": "Forbidden: insufficient permissions to move card"}
+
+    card_title = existing["title"]
+
+    # Verify destination column belongs to same board/project
+    cursor.execute("SELECT id FROM columns WHERE id = ? AND board_id = ?", (destination_column_id, project_id))
+    dest_col = cursor.fetchone()
+    if not dest_col:
+        conn.close()
+        return None
+
+    cursor.execute(
+        "UPDATE cards SET column_id = ?, position = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (destination_column_id, position, card_id),
+    )
+    conn.commit()
+    conn.close()
+
+    log_activity(
+        project_id,
+        user_id or "user",
+        "card_moved",
+        "card",
+        card_id,
+        f"Moved task '{card_title}'",
+        {"destinationColumnId": destination_column_id, "position": position},
+        db_path=db_path,
+    )
+
+    return get_board(user_id or "user", db_path, project_id=project_id)
+
+
+def update_column(column_id: str, title: str, user_id: str = "user", db_path: Path = None):
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT board_id FROM columns WHERE id = ?", (column_id,))
+    col_row = cursor.fetchone()
+    if not col_row:
+        conn.close()
+        return None
+
+    project_id = col_row["board_id"]
+    if user_id and not check_user_permission(project_id, user_id, "member", db_path=db_path):
+        conn.close()
+        return {"error": "Forbidden: insufficient permissions to update column"}
+
+    cursor.execute("UPDATE columns SET title = ? WHERE id = ?", (title, column_id))
+    conn.commit()
+    conn.close()
+
+    log_activity(project_id, user_id or "user", "column_updated", "column", column_id, f"Renamed column to '{title}'", {"title": title}, db_path=db_path)
+    return {"id": column_id, "title": title}
+
+
+def clear_column_cards(column_id: str, user_id: str = "user", db_path: Path = None):
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT board_id, title FROM columns WHERE id = ?", (column_id,))
+    col_row = cursor.fetchone()
+    if not col_row:
+        conn.close()
+        return False
+
+    project_id = col_row["board_id"]
+    if user_id and not check_user_permission(project_id, user_id, "member", db_path=db_path):
+        conn.close()
+        return {"error": "Forbidden: insufficient permissions to clear column"}
+
+    cursor.execute("DELETE FROM cards WHERE column_id = ?", (column_id,))
+    conn.commit()
+    conn.close()
+
+    log_activity(project_id, user_id or "user", "column_cleared", "column", column_id, f"Cleared all cards from column '{col_row['title']}'", {}, db_path=db_path)
     return True
 
 
