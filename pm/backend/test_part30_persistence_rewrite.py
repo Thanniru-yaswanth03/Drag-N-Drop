@@ -35,19 +35,22 @@ class TestPart30PersistenceRewrite(unittest.TestCase):
     def test_1_delete_survives_refresh(self):
         username, password, headers = self._register_user("u1_delete_refresh")
         
-        # 1. Get initial board
+        # 1. Get initial board (0 cards)
         board_res = self.client.get("/api/board", headers=headers)
         self.assertEqual(board_res.status_code, 200)
         board = board_res.json()
-        self.assertGreater(len(board["cards"]), 0, "Initial board should have default cards")
+        self.assertEqual(len(board["cards"]), 0, "Initial board must start with 0 cards")
         
-        card_to_delete = list(board["cards"].keys())[0]
+        # 2. Add card
+        col_id = board["columns"][0]["id"]
+        add_res = self.client.post("/api/cards", json={"columnId": col_id, "title": "Card to Delete"}, headers=headers)
+        card_to_delete = add_res.json()["card"]["id"]
         
-        # 2. Delete card via API
+        # 3. Delete card via API
         del_res = self.client.delete(f"/api/cards/{card_to_delete}", headers=headers)
         self.assertEqual(del_res.status_code, 200)
         
-        # 3. Direct DB query verification
+        # 4. Direct DB query verification
         conn = database.get_db_connection(self.db_path)
         cursor = conn.cursor()
         cursor.execute("SELECT id FROM cards WHERE id = ?", (card_to_delete,))
@@ -55,7 +58,7 @@ class TestPart30PersistenceRewrite(unittest.TestCase):
         conn.close()
         self.assertIsNone(row, "Deleted card must NOT exist in SQLite database")
         
-        # 4. Re-fetch board via API (Simulating page refresh)
+        # 5. Re-fetch board via API (Simulating page refresh)
         refreshed_res = self.client.get("/api/board", headers=headers)
         self.assertEqual(refreshed_res.status_code, 200)
         refreshed_board = refreshed_res.json()
@@ -65,7 +68,9 @@ class TestPart30PersistenceRewrite(unittest.TestCase):
         username, password, headers = self._register_user("u2_delete_relogin")
         
         board = self.client.get("/api/board", headers=headers).json()
-        card_to_delete = list(board["cards"].keys())[0]
+        col_id = board["columns"][0]["id"]
+        add_res = self.client.post("/api/cards", json={"columnId": col_id, "title": "Temp Card"}, headers=headers)
+        card_to_delete = add_res.json()["card"]["id"]
         
         self.client.delete(f"/api/cards/{card_to_delete}", headers=headers)
         

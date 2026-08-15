@@ -24,6 +24,12 @@ class TestAuditPersistenceFailures(unittest.TestCase):
         self.token = reg_res["token"]
         self.headers = {"Authorization": f"Bearer {self.token}"}
         self.client = TestClient(app)
+        
+        # Seed initial test cards for audit operations
+        board = database.get_board(self.username, db_path=self.db_path)
+        col_id = board["columns"][0]["id"]
+        database.add_card(self.username, col_id, "card-1", "Initial Card 1", "Details 1", db_path=self.db_path)
+        database.add_card(self.username, col_id, "card-2", "Initial Card 2", "Details 2", db_path=self.db_path)
 
     def tearDown(self):
         database.DB_PATH = self.orig_db_path

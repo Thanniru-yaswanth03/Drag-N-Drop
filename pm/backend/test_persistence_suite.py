@@ -10,14 +10,18 @@ class TestPersistenceSuite(unittest.TestCase):
         database.init_db(self.db_path)
         self.username = "test_user_persistence"
         database.register_user(self.username, "password123", db_path=self.db_path)
+        board = database.get_board(self.username, db_path=self.db_path)
+        col_id = board["columns"][0]["id"]
+        database.add_card(self.username, col_id, "card-1-test_user_persistence", "Card 1", "D1", db_path=self.db_path)
+        database.add_card(self.username, col_id, "card-2-test_user_persistence", "Card 2", "D2", db_path=self.db_path)
+        database.add_card(self.username, col_id, "card-3-test_user_persistence", "Card 3", "D3", db_path=self.db_path)
 
     def tearDown(self):
         self.tmp_dir.cleanup()
 
     def test_A_and_B_delete_single_card_and_refresh(self):
-        # Initial board has 8 default cards
         board = database.get_board(self.username, db_path=self.db_path)
-        self.assertEqual(len(board["cards"]), 8)
+        self.assertEqual(len(board["cards"]), 3)
         self.assertIn("card-1-test_user_persistence", board["cards"])
 
         # Delete card-1
@@ -25,7 +29,7 @@ class TestPersistenceSuite(unittest.TestCase):
 
         # GET board (simulating refresh)
         board_after = database.get_board(self.username, db_path=self.db_path)
-        self.assertEqual(len(board_after["cards"]), 7)
+        self.assertEqual(len(board_after["cards"]), 2)
         self.assertNotIn("card-1-test_user_persistence", board_after["cards"])
 
     def test_C_and_D_logout_login_and_backend_restart(self):

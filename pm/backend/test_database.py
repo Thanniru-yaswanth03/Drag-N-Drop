@@ -28,7 +28,7 @@ def test_init_and_seed_db():
     assert board_id == "board-testuser"
     board = database.get_board("testuser", TEST_DB_PATH)
     assert len(board["columns"]) == 5
-    assert "card-1" in board["cards"]
+    assert len(board["cards"]) == 0
 
 
 def test_save_board_data():

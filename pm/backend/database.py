@@ -167,7 +167,7 @@ def init_db(db_path: Path = None):
     conn.commit()
     conn.close()
 
-    ensure_default_user(db_path)
+    # Table creation complete
 
 
 def ensure_default_user(db_path: Path = None):
@@ -314,24 +314,11 @@ def authenticate_user(username: str, password: str, db_path: Path = None):
 
 
 DEFAULT_COLUMNS_SPEC = [
-    ("col-backlog", "Backlog", 0, [
-        ("card-1", "Align roadmap themes", "Draft quarterly themes with impact statements and metrics.", 0),
-        ("card-2", "Gather customer signals", "Review support tags, sales notes, and churn feedback.", 1),
-    ]),
-    ("col-discovery", "Discovery", 1, [
-        ("card-3", "Prototype analytics view", "Sketch initial dashboard layout and key drill-downs.", 0),
-    ]),
-    ("col-progress", "In Progress", 2, [
-        ("card-4", "Refine status language", "Standardize column labels and tone across the board.", 0),
-        ("card-5", "Design card layout", "Add hierarchy and spacing for scanning dense lists.", 1),
-    ]),
-    ("col-review", "Review", 3, [
-        ("card-6", "QA micro-interactions", "Verify hover, focus, and loading states.", 0),
-    ]),
-    ("col-done", "Done", 4, [
-        ("card-7", "Ship marketing page", "Final copy approved and asset pack delivered.", 0),
-        ("card-8", "Close onboarding sprint", "Document release notes and share internally.", 1),
-    ]),
+    ("col-backlog", "Backlog", 0, []),
+    ("col-discovery", "Discovery", 1, []),
+    ("col-progress", "In Progress", 2, []),
+    ("col-review", "Review", 3, []),
+    ("col-done", "Done", 4, []),
 ]
 
 
