@@ -42,11 +42,12 @@ export const KanbanColumn = memo(
         ref={setNodeRef}
         data-testid={`column-${column.id}`}
         className={clsx(
-          "flex min-h-[500px] sm:min-h-[540px] flex-col rounded-[28px] border p-4 shadow-[var(--shadow)] transition-all duration-200",
+          "flex min-h-[220px] sm:min-h-[540px] flex-col rounded-[28px] border p-4 shadow-[var(--shadow)] transition-all duration-200",
           isOver
             ? "border-[var(--primary-blue)] ring-4 ring-[var(--primary-blue)]/20 scale-[1.01] bg-[var(--primary-blue)]/5 shadow-2xl"
             : "border-[var(--stroke)] bg-[var(--surface-strong)]"
         )}
+
 
       >
         <div className="flex items-start justify-between gap-3 border-b border-[var(--stroke)] pb-3.5 mb-3.5">

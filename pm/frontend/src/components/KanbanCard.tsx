@@ -15,10 +15,12 @@ export const KanbanCard = memo(
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
       useSortable({ id: card.id });
 
-    const style = {
+    const style: React.CSSProperties = {
       transform: CSS.Transform.toString(transform),
       transition,
+      touchAction: "none",
     };
+
 
     const priorityStyles = {
       high: {
