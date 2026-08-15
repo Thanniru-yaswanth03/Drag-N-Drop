@@ -122,9 +122,11 @@ def test_api_board_endpoints():
 
 def test_enhanced_task_management_db():
     database.seed_default_board("testuser", TEST_DB_PATH)
+    board = database.get_board("testuser", TEST_DB_PATH)
+    col_id = board["columns"][0]["id"]
     added = database.add_card(
         user_id="testuser",
-        column_id="col-backlog",
+        column_id=col_id,
         card_id="card-part11-1",
         title="Part 11 Task",
         details="Detail text",
@@ -256,6 +258,31 @@ def test_card_persistence_across_logout_and_login():
     assert new_card_id in after_login_board["cards"]
     assert after_login_board["cards"][new_card_id]["title"] == "Persistent Task Title"
     assert after_login_board["cards"][new_card_id]["priority"] == "high"
+
+
+def test_auto_seed_yash_and_user():
+    # Verify that init_db auto-seeded yash and user with default board and credentials
+    auth_yash = database.authenticate_user("yash", "password", db_path=TEST_DB_PATH)
+    assert auth_yash is not None, "Expected yash to authenticate with default password"
+    assert auth_yash["user"] == "yash"
+
+    auth_user = database.authenticate_user("user", "password", db_path=TEST_DB_PATH)
+    assert auth_user is not None, "Expected user to authenticate with default password"
+    assert auth_user["user"] == "user"
+
+    # Verify default board exists for yash
+    yash_projects = database.get_projects("yash", db_path=TEST_DB_PATH)
+    assert len(yash_projects) >= 1
+    yash_board = database.get_board("yash", db_path=TEST_DB_PATH, project_id=yash_projects[0]["id"])
+    assert len(yash_board["columns"]) == 5
+
+
+def test_custom_database_path_resolution(monkeypatch, tmp_path):
+    custom_db = tmp_path / "custom_dir" / "test_custom.db"
+    monkeypatch.setenv("DATABASE_PATH", str(custom_db))
+    resolved = database._resolve_default_db_path()
+    assert resolved == custom_db
+
 
 
 

@@ -26,3 +26,9 @@ SECRET_KEY = os.getenv("SECRET_KEY", "drag_n_drop_dev_secret_key_2026").strip()
 CORS_ORIGINS = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "*").split(",") if origin.strip()]
 RATE_LIMIT_LOGIN_MAX = int(os.getenv("RATE_LIMIT_LOGIN_MAX", "15"))
 RATE_LIMIT_LOGIN_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_LOGIN_WINDOW_SECONDS", "60"))
+
+# Database & Persistence Configuration
+DATABASE_PATH = os.getenv("DATABASE_PATH", "").strip()
+AUTO_SEED_USERS = [u.strip().lower() for u in os.getenv("AUTO_SEED_USERS", "yash,user").split(",") if u.strip()]
+DEFAULT_USER_PASSWORD = os.getenv("DEFAULT_USER_PASSWORD", "password").strip()
+

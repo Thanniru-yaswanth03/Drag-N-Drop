@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import secrets
 import sqlite3
 import uuid
@@ -7,7 +8,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-DB_PATH = Path(__file__).resolve().parent / "pm.db"
+def _resolve_default_db_path() -> Path:
+    env_path = os.getenv("DATABASE_PATH", "").strip()
+    if env_path:
+        return Path(env_path)
+    container_data_dir = Path("/app/backend/data")
+    if container_data_dir.exists() and container_data_dir.is_dir():
+        return container_data_dir / "pm.db"
+    return Path(__file__).resolve().parent / "pm.db"
+
+DB_PATH = _resolve_default_db_path()
 
 
 def hash_password(password: str, salt: str) -> str:
@@ -37,6 +47,11 @@ def get_db_connection(db_path: Path = None):
         except Exception:
             pass
     conn = sqlite3.connect(target_path, timeout=30.0)
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+    except Exception:
+        pass
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -170,7 +185,15 @@ def init_db(db_path: Path = None):
     conn.commit()
     conn.close()
 
-    # Table creation complete
+    # Auto-seed configured default users and their default boards
+    try:
+        from config import AUTO_SEED_USERS
+        for seed_u in AUTO_SEED_USERS:
+            seed_default_board(seed_u, db_path=db_path)
+    except Exception:
+        # Fallback to standard default users
+        for seed_u in ("yash", "user"):
+            seed_default_board(seed_u, db_path=db_path)
 
 
 
@@ -185,7 +208,13 @@ def create_session(username: str, db_path: Path = None) -> dict:
     if not row:
         user_id = f"user-{uuid.uuid4().hex[:8]}"
         _salt = secrets.token_hex(16)
-        default_pw = "password" if username_clean in ("user", "testuser") else secrets.token_hex(16)
+        try:
+            from config import AUTO_SEED_USERS, DEFAULT_USER_PASSWORD
+            is_auto_seed = username_clean in AUTO_SEED_USERS or username_clean in ("user", "testuser", "yash")
+            default_pw = DEFAULT_USER_PASSWORD if is_auto_seed else secrets.token_hex(16)
+        except Exception:
+            is_auto_seed = username_clean in ("user", "testuser", "yash")
+            default_pw = "password" if is_auto_seed else secrets.token_hex(16)
         cursor.execute(
             "INSERT INTO users (id, username, password_hash, password_salt) VALUES (?, ?, ?, ?)",
             (user_id, username_clean, hash_password(default_pw, _salt), _salt),
@@ -245,7 +274,13 @@ def register_user(username: str, password: str, db_path: Path = None):
     cursor.execute("SELECT id FROM users WHERE LOWER(username) = ?", (username_clean,))
     existing_row = cursor.fetchone()
     if existing_row:
-        if username_clean in ("user", "testuser"):
+        try:
+            from config import AUTO_SEED_USERS
+            can_reset_pw = username_clean in AUTO_SEED_USERS or username_clean in ("user", "testuser", "yash")
+        except Exception:
+            can_reset_pw = username_clean in ("user", "testuser", "yash")
+
+        if can_reset_pw:
             salt = secrets.token_hex(16)
             hashed = hash_password(password, salt)
             cursor.execute(
@@ -322,12 +357,20 @@ def seed_default_board(user_id: str = "user", db_path: Path = None):
     user_row = cursor.fetchone()
     if not user_row:
         try:
+            from config import AUTO_SEED_USERS, DEFAULT_USER_PASSWORD
+            is_auto_seed = username_clean in AUTO_SEED_USERS or username_clean in ("user", "testuser", "yash")
+            default_pw = DEFAULT_USER_PASSWORD if is_auto_seed else secrets.token_hex(16)
+        except Exception:
+            is_auto_seed = username_clean in ("user", "testuser", "yash")
+            default_pw = "password" if is_auto_seed else secrets.token_hex(16)
+
+        try:
             _salt = secrets.token_hex(16)
-            default_pw = "password" if username_clean in ("user", "testuser") else secrets.token_hex(16)
             cursor.execute(
                 "INSERT INTO users (id, username, password_hash, password_salt) VALUES (?, ?, ?, ?)",
                 (f"user-{username_clean}", username_clean, hash_password(default_pw, _salt), _salt),
             )
+            conn.commit()
             internal_user_id = f"user-{username_clean}"
         except sqlite3.IntegrityError:
             cursor.execute("SELECT id FROM users WHERE LOWER(username) = ?", (username_clean,))
@@ -336,31 +379,44 @@ def seed_default_board(user_id: str = "user", db_path: Path = None):
     else:
         internal_user_id = user_row["id"]
 
-    # Check if user has a board
-    cursor.execute("SELECT id FROM boards WHERE user_id = ?", (internal_user_id,))
+    # Check if user has a board or board_id already exists
+    board_id = f"board-{username_clean}"
+    cursor.execute("SELECT id FROM boards WHERE user_id = ? OR id = ?", (internal_user_id, board_id))
     board_row = cursor.fetchone()
     if board_row:
         conn.close()
         return board_row["id"]
 
-    board_id = f"board-{user_id}"
-    cursor.execute(
-        "INSERT INTO boards (id, user_id, name) VALUES (?, ?, ?)",
-        (board_id, internal_user_id, "Main Project"),
-    )
+    try:
+        cursor.execute(
+            "INSERT INTO boards (id, user_id, name) VALUES (?, ?, ?)",
+            (board_id, internal_user_id, "Main Project"),
+        )
+    except sqlite3.IntegrityError:
+        cursor.execute("SELECT id FROM boards WHERE user_id = ? OR id = ?", (internal_user_id, board_id))
+        board_row = cursor.fetchone()
+        if board_row:
+            conn.close()
+            return board_row["id"]
 
     for col_id, col_title, col_pos, cards in DEFAULT_COLUMNS_SPEC:
-        actual_col_id = col_id if username_clean in ("user", "testuser") else f"{col_id}-{username_clean}"
-        cursor.execute(
-            "INSERT INTO columns (id, board_id, title, position) VALUES (?, ?, ?, ?)",
-            (actual_col_id, board_id, col_title, col_pos),
-        )
-        for card_id, card_title, card_details, card_pos in cards:
-            actual_card_id = card_id if username_clean in ("user", "testuser") else f"{card_id}-{username_clean}"
+        actual_col_id = col_id if username_clean == "user" else f"{col_id}-{username_clean}"
+        try:
             cursor.execute(
-                "INSERT INTO cards (id, column_id, title, details, position) VALUES (?, ?, ?, ?, ?)",
-                (actual_card_id, actual_col_id, card_title, card_details, card_pos),
+                "INSERT INTO columns (id, board_id, title, position) VALUES (?, ?, ?, ?)",
+                (actual_col_id, board_id, col_title, col_pos),
             )
+        except sqlite3.IntegrityError:
+            pass
+        for card_id, card_title, card_details, card_pos in cards:
+            actual_card_id = card_id if username_clean == "user" else f"{card_id}-{username_clean}"
+            try:
+                cursor.execute(
+                    "INSERT INTO cards (id, column_id, title, details, position) VALUES (?, ?, ?, ?, ?)",
+                    (actual_card_id, actual_col_id, card_title, card_details, card_pos),
+                )
+            except sqlite3.IntegrityError:
+                pass
 
     conn.commit()
     conn.close()
@@ -392,7 +448,7 @@ def reset_default_board(user_id: str = "user", db_path: Path = None):
     cursor.execute("DELETE FROM columns WHERE board_id = ?", (board_id,))
 
     for col_id, col_title, col_pos, _ in DEFAULT_COLUMNS_SPEC:
-        actual_col_id = col_id if user_id in ("user", "testuser") else f"{col_id}-{user_id}"
+        actual_col_id = col_id if username_clean == "user" else f"{col_id}-{username_clean}"
         cursor.execute(
             "INSERT INTO columns (id, board_id, title, position) VALUES (?, ?, ?, ?)",
             (actual_col_id, board_id, col_title, col_pos),

@@ -3,8 +3,15 @@ services:
     name: drag-n-drop-backend
     env: docker
     dockerfilePath: Dockerfile
+    disk:
+      name: pm-data
+      mountPath: /data
+      sizeGB: 1
     envVars:
       - key: PORT
         value: 8000
+      - key: DATABASE_PATH
+        value: /data/pm.db
       - key: CORS_ORIGINS
         value: "*"
+
