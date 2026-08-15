@@ -12,8 +12,11 @@ def test_ai_test_endpoint():
     assert "status" in data
 
 
-def test_ai_chat_endpoint_mock_addition():
+def test_ai_chat_endpoint_mock_addition(monkeypatch):
     import database
+    import config
+    monkeypatch.setattr(config, "OPENROUTER_API_KEY", "")
+    database.seed_default_board("user")
     sess = database.create_session("user")["token"]
     response = client.post(
         "/api/ai/chat",
@@ -28,3 +31,4 @@ def test_ai_chat_endpoint_mock_addition():
     assert "reply" in data
     assert data["board_update"] is not None
     assert "columns" in data["board_update"]
+

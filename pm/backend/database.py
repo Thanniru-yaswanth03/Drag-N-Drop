@@ -26,7 +26,11 @@ def verify_password(password: str, password_hash: str, salt: str) -> bool:
     return hash_password(password, salt) == password_hash
 
 
+_in_init = False
+
+
 def get_db_connection(db_path: Path = None):
+    global _in_init
     target_path = db_path if db_path is not None else DB_PATH
     if hasattr(target_path, "parent") and not target_path.parent.exists():
         try:
@@ -35,6 +39,20 @@ def get_db_connection(db_path: Path = None):
             pass
     conn = sqlite3.connect(target_path, timeout=15.0)
     conn.row_factory = sqlite3.Row
+
+    if not _in_init:
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+            has_table = cursor.fetchone()
+            cursor.close()
+            if not has_table:
+                _in_init = True
+                init_db(target_path)
+                _in_init = False
+        except Exception:
+            _in_init = False
+
     return conn
 
 

@@ -47,19 +47,13 @@ export const LoginForm = ({ onLogin }: LoginFormProps) => {
 
       const success = await onLogin(cleanUser, password);
       if (!success) {
-        setError("Invalid username or password. (Hint: user / password)");
+        setError("Invalid username or password.");
       }
     } catch {
       setError("An unexpected error occurred. Please try again.");
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleAutoFill = () => {
-    setIsRegistering(false);
-    setUsername("user");
-    setPassword("password");
   };
 
   return (
@@ -173,17 +167,9 @@ export const LoginForm = ({ onLogin }: LoginFormProps) => {
             </button>
           </form>
 
-          <div className="mt-6 text-center">
-            <button
-              type="button"
-              onClick={handleAutoFill}
-              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--stroke)] bg-[var(--surface)] px-4 py-2 text-xs font-medium text-[var(--gray-text)] transition hover:border-[var(--primary-blue)] hover:text-[var(--primary-blue)]"
-            >
-              <span>🔑</span> Demo credentials: <strong className="text-[var(--navy-dark)]">user / password</strong> (click to auto-fill)
-            </button>
-          </div>
         </div>
       </main>
     </div>
   );
 };
+
