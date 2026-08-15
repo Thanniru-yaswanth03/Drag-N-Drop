@@ -412,18 +412,12 @@ def reset_default_board(user_id: str = "user", db_path: Path = None):
         cursor.execute("DELETE FROM cards WHERE column_id = ?", (col["id"],))
     cursor.execute("DELETE FROM columns WHERE board_id = ?", (board_id,))
 
-    for col_id, col_title, col_pos, cards in DEFAULT_COLUMNS_SPEC:
+    for col_id, col_title, col_pos, _ in DEFAULT_COLUMNS_SPEC:
         actual_col_id = col_id if user_id in ("user", "testuser") else f"{col_id}-{user_id}"
         cursor.execute(
             "INSERT INTO columns (id, board_id, title, position) VALUES (?, ?, ?, ?)",
             (actual_col_id, board_id, col_title, col_pos),
         )
-        for card_id, card_title, card_details, card_pos in cards:
-            actual_card_id = card_id if user_id in ("user", "testuser") else f"{card_id}-{user_id}"
-            cursor.execute(
-                "INSERT INTO cards (id, column_id, title, details, position) VALUES (?, ?, ?, ?, ?)",
-                (actual_card_id, actual_col_id, card_title, card_details, card_pos),
-            )
 
     conn.commit()
     conn.close()

@@ -83,11 +83,8 @@ export const KanbanBoard = () => {
   const handleWsMessage = useCallback((payload: any) => {
     if (payload && payload.type === "BOARD_UPDATED" && payload.board && payload.projectId === activeProjectId) {
       setBoard(payload.board);
-      if (user && activeProjectId) {
-        localStorage.setItem(`kanban_board_${user}_${activeProjectId}`, JSON.stringify(payload.board));
-      }
     }
-  }, [setBoard, user, activeProjectId]);
+  }, [setBoard, activeProjectId]);
 
   const { isConnected: isWsConnected } = useWebSocket({
     projectId: activeProjectId,
