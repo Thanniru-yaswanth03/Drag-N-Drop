@@ -130,7 +130,7 @@ export const LoginForm = ({ onLogin }: LoginFormProps) => {
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="user"
                 required
-                className="w-full rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] px-4 py-3.5 text-xs font-semibold text-[var(--navy-dark)] placeholder:text-[var(--gray-text)] outline-none transition focus:border-[var(--primary-blue)] focus:ring-2 focus:ring-[var(--primary-blue)]/20"
+                className="w-full rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] px-4 py-3.5 text-base sm:text-xs font-semibold text-[var(--navy-dark)] placeholder:text-[var(--gray-text)] outline-none transition focus:border-[var(--primary-blue)] focus:ring-2 focus:ring-[var(--primary-blue)]/20"
               />
             </div>
 
@@ -148,8 +148,9 @@ export const LoginForm = ({ onLogin }: LoginFormProps) => {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 required
-                className="w-full rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] px-4 py-3.5 text-xs font-semibold text-[var(--navy-dark)] placeholder:text-[var(--gray-text)] outline-none transition focus:border-[var(--primary-blue)] focus:ring-2 focus:ring-[var(--primary-blue)]/20"
+                className="w-full rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] px-4 py-3.5 text-base sm:text-xs font-semibold text-[var(--navy-dark)] placeholder:text-[var(--gray-text)] outline-none transition focus:border-[var(--primary-blue)] focus:ring-2 focus:ring-[var(--primary-blue)]/20"
               />
+
             </div>
 
             <button

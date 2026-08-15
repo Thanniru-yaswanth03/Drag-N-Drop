@@ -50,10 +50,12 @@ export const KanbanCard = memo(
         style={style}
         data-testid={`card-${card.id}`}
         className={clsx(
-          "group relative rounded-2xl border border-[var(--stroke)] bg-[var(--card-bg)] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.04)]",
-          "transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.12)] hover:border-[var(--primary-blue)]/40",
-          isDragging && "opacity-60 shadow-2xl ring-2 ring-[var(--primary-blue)] scale-[1.02]"
+          "group relative rounded-2xl border p-4 transition-all duration-200",
+          isDragging
+            ? "opacity-30 border-2 border-dashed border-[var(--primary-blue)] bg-[var(--primary-blue)]/5 shadow-none scale-95"
+            : "border-[var(--stroke)] bg-[var(--card-bg)] shadow-[0_4px_20px_rgba(0,0,0,0.04)] hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.12)] hover:border-[var(--primary-blue)]/40"
         )}
+
         {...attributes}
         {...listeners}
       >

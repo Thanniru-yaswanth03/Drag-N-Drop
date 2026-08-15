@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
+import clsx from "clsx";
 import {
   DndContext,
+
   DragOverlay,
   PointerSensor,
   TouchSensor,
@@ -312,7 +314,7 @@ export const KanbanBoard = () => {
   });
 
   const touchSensor = useSensor(TouchSensor, {
-    activationConstraint: { delay: 150, tolerance: 5 },
+    activationConstraint: { delay: 100, tolerance: 8 },
   });
 
   const mouseSensor = useSensor(MouseSensor, {
@@ -320,6 +322,7 @@ export const KanbanBoard = () => {
   });
 
   const sensors = useSensors(pointerSensor, touchSensor, mouseSensor);
+
 
   const collisionDetectionStrategy: CollisionDetection = useCallback((args) => {
     const pointerCollisions = pointerWithin(args);
@@ -767,6 +770,41 @@ export const KanbanBoard = () => {
           </div>
         </header>
 
+        {/* Mobile Column Quick Switcher Tabs (< lg screens) */}
+        <div className="lg:hidden flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none snap-x -mx-1 px-1">
+          {filteredBoard.columns.map((col) => {
+            const count = col.cardIds.length;
+            const columnAccents: Record<string, string> = {
+              "col-backlog": "bg-indigo-500",
+              "col-discovery": "bg-sky-500",
+              "col-progress": "bg-amber-500",
+              "col-review": "bg-purple-500",
+              "col-done": "bg-emerald-500",
+            };
+            const dotBg = columnAccents[col.id] || "bg-blue-500";
+
+            return (
+              <button
+                key={`mobile-tab-${col.id}`}
+                type="button"
+                onClick={() => {
+                  const el = document.getElementById(`mobile-column-${col.id}`);
+                  if (el) {
+                    el.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+                  }
+                }}
+                className="snap-center shrink-0 inline-flex items-center gap-2 rounded-full border border-[var(--stroke)] bg-[var(--surface-strong)] px-3.5 py-2 text-xs font-bold text-[var(--navy-dark)] shadow-sm transition hover:bg-[var(--surface)] active:scale-95"
+              >
+                <span className={clsx("h-2.5 w-2.5 rounded-full", dotBg)} />
+                <span>{col.title}</span>
+                <span className="rounded-full bg-[var(--surface)] px-2 py-0.5 text-[10px] font-extrabold text-[var(--gray-text)] border border-[var(--stroke)]">
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
         {/* Board Columns Grid */}
         <DndContext
           sensors={sensors}
@@ -776,7 +814,7 @@ export const KanbanBoard = () => {
         >
           <section className="mobile-snap-scroll grid gap-6 lg:grid-cols-5 pb-4 lg:pb-0">
             {filteredBoard.columns.map((column) => (
-              <div key={column.id} className="mobile-snap-column">
+              <div key={column.id} id={`mobile-column-${column.id}`} className="mobile-snap-column">
                 <KanbanColumn
                   column={column}
                   cards={column.cardIds.map((cardId) => filteredBoard.cards[cardId]).filter(Boolean)}
@@ -791,12 +829,13 @@ export const KanbanBoard = () => {
           </section>
           <DragOverlay>
             {activeCard ? (
-              <div className="w-[270px]">
+              <div className="w-[280px] sm:w-[320px]">
                 <KanbanCardPreview card={activeCard} />
               </div>
             ) : null}
           </DragOverlay>
         </DndContext>
+
 
         <footer className="mt-12 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-[var(--stroke)] pt-6 text-xs text-[var(--gray-text)]">
           <div className="flex items-center gap-2 font-semibold">
