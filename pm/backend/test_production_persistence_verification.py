@@ -314,3 +314,93 @@ def test_scenario_i_database_diagnostics_endpoint(isolated_db_environment):
     diag_data = diag_resp.json()
     assert diag_data["resolvedPath"] == db_diag["resolvedPath"]
     assert diag_data["userCount"] == db_diag["userCount"]
+
+    # Query /api/health/db
+    health_db_resp = client.get("/api/health/db")
+    assert health_db_resp.status_code == 200
+    health_db_data = health_db_resp.json()
+    assert health_db_data["status"] == "ok"
+    assert health_db_data["resolvedPath"] == db_diag["resolvedPath"]
+    assert health_db_data["userCount"] == db_diag["userCount"]
+    assert "password_hash" not in health_db_resp.text
+    assert "password_salt" not in health_db_resp.text
+    assert "token" not in health_db_data
+
+
+def test_scenario_j_full_restart_persistence_lifecycle(isolated_db_environment):
+    """Test J: End-to-End Persistence Lifecycle
+    Sequence: register -> login -> create card/board -> restart backend -> login again -> verify user/board/card persistence.
+    """
+    db_path = isolated_db_environment
+    client = TestClient(app)
+
+    username = "lifecycle_user_2026"
+    password = "LifecyclePassWord!456"
+
+    # Step 1: Register
+    reg_res = client.post("/api/auth/register", json={"username": username, "password": password})
+    assert reg_res.status_code == 200
+    reg_data = reg_res.json()
+    assert reg_data["success"] is True
+    initial_token = reg_data["token"]
+
+    # Step 2: Immediate Login
+    login_res = client.post("/api/auth/login", json={"username": username, "password": password})
+    assert login_res.status_code == 200
+    login_token = login_res.json()["token"]
+
+    # Step 3: Fetch projects and board
+    auth_headers = {"Authorization": f"Bearer {login_token}"}
+    projs_res = client.get("/api/projects", headers=auth_headers)
+    assert projs_res.status_code == 200
+    projs = projs_res.json()
+    assert len(projs) > 0
+    project_id = projs[0]["id"]
+
+    board_res = client.get(f"/api/board?project_id={project_id}", headers=auth_headers)
+    assert board_res.status_code == 200
+    board_data = board_res.json()
+    col_id = board_data["columns"][0]["id"]
+
+    # Step 4: Create a new persistent card
+    card_res = client.post(
+        "/api/cards",
+        json={
+            "columnId": col_id,
+            "title": "Vital Production Task",
+            "details": "Must persist across full backend restart",
+            "priority": "high",
+        },
+        headers=auth_headers,
+    )
+    assert card_res.status_code == 200
+    created_card = card_res.json()["card"]
+    created_card_id = created_card["id"]
+
+    # Step 5: Simulate Backend Process Restart (re-initialize schema idempotently, fresh client)
+    database.init_db(db_path=db_path)
+    fresh_client = TestClient(app)
+
+    # Step 6: Log in again post-restart
+    re_login_res = fresh_client.post("/api/auth/login", json={"username": username, "password": password})
+    assert re_login_res.status_code == 200
+    new_session_token = re_login_res.json()["token"]
+    new_auth_headers = {"Authorization": f"Bearer {new_session_token}"}
+
+    # Step 7: Verify user / projects / board / cards are 100% intact
+    me_res = fresh_client.get("/api/auth/me", headers=new_auth_headers)
+    assert me_res.status_code == 200
+    assert me_res.json()["user"] == username
+
+    projs_post_res = fresh_client.get("/api/projects", headers=new_auth_headers)
+    assert projs_post_res.status_code == 200
+    projs_post = projs_post_res.json()
+    assert any(p["id"] == project_id for p in projs_post)
+
+    board_post_res = fresh_client.get(f"/api/board?project_id={project_id}", headers=new_auth_headers)
+    assert board_post_res.status_code == 200
+    board_post = board_post_res.json()
+    assert created_card_id in board_post["cards"]
+    assert board_post["cards"][created_card_id]["title"] == "Vital Production Task"
+    assert board_post["cards"][created_card_id]["priority"] == "high"
+

@@ -209,9 +209,14 @@ def health_check():
     }
 
 
+@app.get("/api/health/db")
 @app.get("/api/diagnostics/db")
 def database_diagnostics():
-    return database.get_database_diagnostics()
+    return {
+        "status": "ok",
+        **database.get_database_diagnostics(),
+    }
+
 
 
 

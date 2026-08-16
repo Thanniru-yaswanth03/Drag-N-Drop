@@ -106,44 +106,45 @@ def get_database_diagnostics(db_path: Optional[Union[str, Path]] = None) -> Dict
             row = cursor.fetchone()
             if row:
                 journal_mode = str(row[0])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Could not read PRAGMA journal_mode: %s", e)
 
         try:
             cursor.execute("PRAGMA foreign_keys")
             row = cursor.fetchone()
             if row:
                 foreign_keys = int(row[0])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Could not read PRAGMA foreign_keys: %s", e)
 
         try:
             cursor.execute("SELECT COUNT(*) as count FROM users")
             user_count = int(cursor.fetchone()["count"])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Could not count users: %s", e)
 
         try:
             cursor.execute("SELECT COUNT(*) as count FROM boards")
             board_count = int(cursor.fetchone()["count"])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Could not count boards: %s", e)
 
         try:
             cursor.execute("SELECT COUNT(*) as count FROM cards")
             card_count = int(cursor.fetchone()["count"])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Could not count cards: %s", e)
 
         try:
             cursor.execute("SELECT COUNT(*) as count FROM sessions")
             session_count = int(cursor.fetchone()["count"])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Could not count sessions: %s", e)
 
         conn.close()
     except Exception as e:
         logger.error("Error collecting database diagnostics: %s", e)
+
 
     return {
         "configuredPath": config.DATABASE_PATH or None,
