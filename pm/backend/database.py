@@ -732,7 +732,156 @@ def get_board(user_id: str, db_path: Path = None, project_id: str = None) -> Opt
     }
 
 
+def save_board(user_id: str, project_id: str, board_data: dict, db_path: Path = None) -> Optional[Dict[str, Any]]:
+    """Atomically and transactionally replace/update the full board state for a project in SQLite.
+    
+    1. Validates authenticated user permissions on project
+    2. Synchronizes columns: updates existing, inserts new, deletes removed
+    3. Synchronizes cards: updates existing, inserts new, deletes removed, preserves exact positions and column mappings
+    4. Runs atomically in a single SQLite transaction with rollback on failure
+    5. Returns the authoritative saved database board state
+    """
+    if not check_user_permission(project_id, user_id, "member", db_path=db_path):
+        return {"error": "Forbidden: insufficient permissions to update board"}
+
+    raw_columns = board_data.get("columns", [])
+    raw_cards = board_data.get("cards", {})
+
+    conn = get_db_connection(db_path)
+    cursor = conn.cursor()
+
+    try:
+        # 1. Fetch existing columns for this project
+        cursor.execute("SELECT id FROM columns WHERE board_id = ?", (project_id,))
+        existing_col_ids = {row["id"] for row in cursor.fetchall()}
+        submitted_col_ids = set()
+
+        # 2. Sync columns
+        for col_pos, col_item in enumerate(raw_columns):
+            col_id = col_item.get("id") or f"col-{uuid.uuid4().hex[:8]}"
+            col_title = col_item.get("title") or f"Column {col_pos + 1}"
+            submitted_col_ids.add(col_id)
+
+            if col_id in existing_col_ids:
+                cursor.execute(
+                    "UPDATE columns SET title = ?, position = ? WHERE id = ? AND board_id = ?",
+                    (col_title, col_pos, col_id, project_id),
+                )
+            else:
+                cursor.execute(
+                    "INSERT INTO columns (id, board_id, title, position) VALUES (?, ?, ?, ?)",
+                    (col_id, project_id, col_title, col_pos),
+                )
+
+        # Delete columns no longer present in submitted board
+        cols_to_delete = existing_col_ids - submitted_col_ids
+        for del_col_id in cols_to_delete:
+            cursor.execute("DELETE FROM cards WHERE column_id = ?", (del_col_id,))
+            cursor.execute("DELETE FROM columns WHERE id = ?", (del_col_id,))
+
+        # 3. Fetch existing cards across all remaining columns of this project
+        cursor.execute(
+            "SELECT c.id FROM cards c JOIN columns col ON c.column_id = col.id WHERE col.board_id = ?",
+            (project_id,),
+        )
+        existing_card_ids = {row["id"] for row in cursor.fetchall()}
+        submitted_card_ids = set()
+
+        # 4. Sync cards according to column cardIds order
+        for col_item in raw_columns:
+            col_id = col_item.get("id")
+            card_ids = col_item.get("cardIds", [])
+            for card_pos, cid in enumerate(card_ids):
+                card_obj = raw_cards.get(cid)
+                if not card_obj or not isinstance(card_obj, dict):
+                    continue
+
+                card_title = card_obj.get("title") or "Untitled Task"
+                det = card_obj.get("details") or card_obj.get("description") or ""
+                desc = card_obj.get("description") or card_obj.get("details") or ""
+                priority = card_obj.get("priority") or "medium"
+                due_date = card_obj.get("dueDate") or card_obj.get("due_date")
+                tags_list = card_obj.get("tags") or []
+                tags_json = json.dumps(tags_list) if isinstance(tags_list, list) else "[]"
+                assignee = card_obj.get("assignee")
+                submitted_card_ids.add(cid)
+
+                if cid in existing_card_ids:
+                    cursor.execute(
+                        """
+                        UPDATE cards
+                        SET column_id = ?, title = ?, details = ?, description = ?, priority = ?, due_date = ?, tags = ?, assignee = ?, position = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (col_id, card_title, det, desc, priority, due_date, tags_json, assignee, card_pos, cid),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        INSERT INTO cards (id, column_id, title, details, description, priority, due_date, tags, assignee, position)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (cid, col_id, card_title, det, desc, priority, due_date, tags_json, assignee, card_pos),
+                    )
+
+        # Also check any cards in raw_cards not in column cardIds but specifying columnId
+        for cid, card_obj in raw_cards.items():
+            if cid not in submitted_card_ids and isinstance(card_obj, dict):
+                target_col_id = card_obj.get("columnId") or card_obj.get("column_id")
+                if target_col_id and target_col_id in submitted_col_ids:
+                    card_title = card_obj.get("title") or "Untitled Task"
+                    det = card_obj.get("details") or card_obj.get("description") or ""
+                    desc = card_obj.get("description") or card_obj.get("details") or ""
+                    priority = card_obj.get("priority") or "medium"
+                    due_date = card_obj.get("dueDate") or card_obj.get("due_date")
+                    tags_list = card_obj.get("tags") or []
+                    tags_json = json.dumps(tags_list) if isinstance(tags_list, list) else "[]"
+                    assignee = card_obj.get("assignee")
+                    submitted_card_ids.add(cid)
+
+                    if cid in existing_card_ids:
+                        cursor.execute(
+                            """
+                            UPDATE cards
+                            SET column_id = ?, title = ?, details = ?, description = ?, priority = ?, due_date = ?, tags = ?, assignee = ?, position = 999, updated_at = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                            """,
+                            (target_col_id, card_title, det, desc, priority, due_date, tags_json, assignee, cid),
+                        )
+                    else:
+                        cursor.execute(
+                            """
+                            INSERT INTO cards (id, column_id, title, details, description, priority, due_date, tags, assignee, position)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 999)
+                            """,
+                            (cid, target_col_id, card_title, det, desc, priority, due_date, tags_json, assignee),
+                        )
+
+        # 5. Delete cards that belong to this project but were omitted from submitted board
+        cards_to_delete = existing_card_ids - submitted_card_ids
+        for del_card_id in cards_to_delete:
+            cursor.execute("DELETE FROM cards WHERE id = ?", (del_card_id,))
+
+        # 6. Update project timestamp
+        cursor.execute("UPDATE boards SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (project_id,))
+
+        conn.commit()
+        conn.close()
+
+        log_activity(project_id, user_id, "board_saved", "board", project_id, "Saved full board layout", {}, db_path=db_path)
+        return get_board(user_id, db_path, project_id=project_id)
+    except Exception as e:
+        logger.error("Failed to save full board transactionally for project %s: %s", project_id, e)
+        try:
+            conn.rollback()
+            conn.close()
+        except Exception:
+            pass
+        raise
+
+
 def add_card(
+
     user_id: str,
     column_id: str,
     card_id: str,

@@ -1,8 +1,10 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, List, Optional, Any
+import os
 import secrets
 import time
+
 from fastapi import FastAPI, HTTPException, status, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -38,7 +40,7 @@ LOGIN_ATTEMPTS: Dict[str, List[float]] = {}
 
 
 def check_rate_limit(client_ip: str) -> bool:
-    if client_ip == "testclient":
+    if client_ip == "testclient" or (os.environ.get("TESTING") == "1" and client_ip in ("127.0.0.1", "localhost", "::1")):
         return True
     now = time.time()
     window = config.RATE_LIMIT_LOGIN_WINDOW_SECONDS
@@ -49,6 +51,7 @@ def check_rate_limit(client_ip: str) -> bool:
     LOGIN_ATTEMPTS[client_ip] = attempts
 
     return len(attempts) <= max_attempts
+
 
 
 def get_authenticated_user(request: Request) -> str:
@@ -411,18 +414,29 @@ def get_board(request: Request, project_id: Optional[str] = None):
 
 
 @app.put("/api/board")
-def update_board(payload: BoardSaveRequest, request: Request, project_id: Optional[str] = None):
+async def update_board(payload: BoardSaveRequest, request: Request, project_id: Optional[str] = None):
     auth_user = get_authenticated_user(request)
     if not project_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="project_id is required")
+        # If not supplied in query, fall back to user's first accessible project
+        projects = database.get_projects(auth_user)
+        if projects:
+            project_id = projects[0]["id"]
+        else:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="project_id is required")
+
     if not database.check_user_permission(project_id, auth_user, "member"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden: Viewers cannot mutate board state")
-    
-    # Granular update for bulk mutations
-    res = database.get_board(user_id=auth_user, project_id=project_id)
+
+    board_dict = payload.model_dump()
+    res = database.save_board(user_id=auth_user, project_id=project_id, board_data=board_dict)
     if res is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found or forbidden")
+    if isinstance(res, dict) and "error" in res:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=res["error"])
+
+    await ws_manager.broadcast_to_project(project_id, {"type": "BOARD_UPDATED", "projectId": project_id, "board": res})
     return res
+
 
 
 # AI Endpoints
@@ -568,3 +582,12 @@ def serve_frontend(full_path: str):
 </body>
 </html>"""
     )
+
+
+if __name__ == "__main__":
+    import os
+    import uvicorn
+    port = int(os.environ.get("PORT", 8008))
+    uvicorn.run(app, host="127.0.0.1", port=port)
+
+

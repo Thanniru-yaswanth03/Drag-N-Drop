@@ -26,4 +26,9 @@ venv/
 .DS_Store
 Thumbs.db
 scratch/
+test-results/
+playwright-report/
+pm/frontend/test-results/
+pm/frontend/playwright-report/
+
 

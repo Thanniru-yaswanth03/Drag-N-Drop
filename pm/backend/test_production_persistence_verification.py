@@ -404,3 +404,291 @@ def test_scenario_j_full_restart_persistence_lifecycle(isolated_db_environment):
     assert board_post["cards"][created_card_id]["title"] == "Vital Production Task"
     assert board_post["cards"][created_card_id]["priority"] == "high"
 
+
+def test_scenario_k_23_step_complete_persistence_lifecycle(isolated_db_environment):
+    """Test K: Exact 23-Step Complete Persistence Lifecycle Test
+    1. Register User A
+    2. Login User A
+    3. Create Project A
+    4. Create Column A
+    5. Create Column B
+    6. Create Card 1
+    7. Create Card 2
+    8. Edit Card 1
+    9. Move Card 1 from A -> B
+    10. Reorder cards
+    11. Delete Card 2
+    12. Refresh
+    13. Verify exact state
+    14. Logout
+    15. Login again
+    16. Verify exact state
+    17. Restart backend
+    18. Verify exact state
+    19. Delete Project
+    20. Restart backend
+    21. Verify Project is still deleted
+    22. Register User B
+    23. Verify User B cannot see User A's data
+    """
+    db_path = isolated_db_environment
+    client = TestClient(app)
+
+    # 1. Register User A
+    user_a = "user_alpha_step23"
+    pass_a = "SecretPassWordAlpha!123"
+    reg_a = client.post("/api/auth/register", json={"username": user_a, "password": pass_a})
+    assert reg_a.status_code == 200
+    assert reg_a.json()["success"] is True
+
+    # 2. Login User A
+    login_a = client.post("/api/auth/login", json={"username": user_a, "password": pass_a})
+    assert login_a.status_code == 200
+    token_a = login_a.json()["token"]
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+
+    # 3. Create Project A
+    proj_resp = client.post("/api/projects", json={"name": "Project Alpha"}, headers=headers_a)
+    assert proj_resp.status_code == 200
+    proj_a = proj_resp.json()
+    proj_a_id = proj_a["id"]
+
+    # 4 & 5. Fetch project's board columns (Column A and Column B)
+    board_init = client.get(f"/api/board?project_id={proj_a_id}", headers=headers_a).json()
+    assert len(board_init["columns"]) >= 2
+    col_a_id = board_init["columns"][0]["id"]  # Backlog
+    col_b_id = board_init["columns"][1]["id"]  # Discovery
+
+    # 6. Create Card 1 in Column A
+    c1_resp = client.post(
+        "/api/cards",
+        json={"columnId": col_a_id, "title": "Card 1 - Original Title", "details": "Details 1", "priority": "medium"},
+        headers=headers_a,
+    )
+    assert c1_resp.status_code == 200
+    card1 = c1_resp.json()["card"]
+    card1_id = card1["id"]
+
+    # 7. Create Card 2 in Column A
+    c2_resp = client.post(
+        "/api/cards",
+        json={"columnId": col_a_id, "title": "Card 2 - Doomed Task", "details": "Details 2", "priority": "low"},
+        headers=headers_a,
+    )
+    assert c2_resp.status_code == 200
+    card2 = c2_resp.json()["card"]
+    card2_id = card2["id"]
+
+    # 8. Edit Card 1
+    edit_resp = client.put(
+        f"/api/cards/{card1_id}",
+        json={"title": "Card 1 - Edited Title", "details": "Updated Details 1", "priority": "high"},
+        headers=headers_a,
+    )
+    assert edit_resp.status_code == 200
+    assert edit_resp.json()["card"]["title"] == "Card 1 - Edited Title"
+    assert edit_resp.json()["card"]["priority"] == "high"
+
+    # 9. Move Card 1 from Column A -> Column B
+    move_resp = client.patch(
+        f"/api/cards/{card1_id}/move",
+        json={"columnId": col_b_id, "position": 0},
+        headers=headers_a,
+    )
+    assert move_resp.status_code == 200
+    board_after_move = move_resp.json()["board"]
+    assert card1_id in [col for col in board_after_move["columns"] if col["id"] == col_b_id][0]["cardIds"]
+
+    # 10. Reorder cards (Create Card 3 in Column B, then reorder Card 3 before Card 1 via PUT /api/board)
+    c3_resp = client.post(
+        "/api/cards",
+        json={"columnId": col_b_id, "title": "Card 3 - Header Task", "details": "Details 3", "priority": "medium"},
+        headers=headers_a,
+    )
+    assert c3_resp.status_code == 200
+    card3_id = c3_resp.json()["card"]["id"]
+
+    # Save board with reordered cards in Column B: [card3_id, card1_id]
+    current_board_state = client.get(f"/api/board?project_id={proj_a_id}", headers=headers_a).json()
+    for col in current_board_state["columns"]:
+        if col["id"] == col_b_id:
+            col["cardIds"] = [card3_id, card1_id]
+
+    reorder_resp = client.put(
+        f"/api/board?project_id={proj_a_id}",
+        json={"columns": current_board_state["columns"], "cards": current_board_state["cards"]},
+        headers=headers_a,
+    )
+    assert reorder_resp.status_code == 200
+    saved_col_b = [col for col in reorder_resp.json()["columns"] if col["id"] == col_b_id][0]
+    assert saved_col_b["cardIds"] == [card3_id, card1_id]
+
+    # 11. Delete Card 2
+    del_resp = client.delete(f"/api/cards/{card2_id}", headers=headers_a)
+    assert del_resp.status_code == 200
+    assert del_resp.json()["success"] is True
+
+    # 12. Refresh (Fetch fresh board state)
+    refreshed_board = client.get(f"/api/board?project_id={proj_a_id}", headers=headers_a).json()
+
+    # 13. Verify exact state
+    assert card2_id not in refreshed_board["cards"]
+    assert card1_id in refreshed_board["cards"]
+    assert card3_id in refreshed_board["cards"]
+    assert refreshed_board["cards"][card1_id]["title"] == "Card 1 - Edited Title"
+    col_b_cards = [col for col in refreshed_board["columns"] if col["id"] == col_b_id][0]["cardIds"]
+    assert col_b_cards == [card3_id, card1_id]
+
+    # 14. Logout User A
+    logout_resp = client.post("/api/auth/logout", headers=headers_a)
+    assert logout_resp.status_code == 200
+
+    # 15. Login again
+    relogin_resp = client.post("/api/auth/login", json={"username": user_a, "password": pass_a})
+    assert relogin_resp.status_code == 200
+    token_a_new = relogin_resp.json()["token"]
+    headers_a_new = {"Authorization": f"Bearer {token_a_new}"}
+
+    # 16. Verify exact state
+    board_after_login = client.get(f"/api/board?project_id={proj_a_id}", headers=headers_a_new).json()
+    assert card2_id not in board_after_login["cards"]
+    assert card1_id in board_after_login["cards"]
+    assert card3_id in board_after_login["cards"]
+    assert board_after_login["cards"][card1_id]["title"] == "Card 1 - Edited Title"
+
+    # 17. Restart backend (simulate server reboot)
+    database.init_db(db_path=db_path)
+    reboot_client = TestClient(app)
+
+    # 18. Verify exact state post-reboot
+    reboot_login = reboot_client.post("/api/auth/login", json={"username": user_a, "password": pass_a})
+    assert reboot_login.status_code == 200
+    reboot_headers = {"Authorization": f"Bearer {reboot_login.json()['token']}"}
+    board_post_reboot = reboot_client.get(f"/api/board?project_id={proj_a_id}", headers=reboot_headers).json()
+    assert card2_id not in board_post_reboot["cards"]
+    assert card1_id in board_post_reboot["cards"]
+    assert card3_id in board_post_reboot["cards"]
+    assert board_post_reboot["cards"][card1_id]["title"] == "Card 1 - Edited Title"
+
+    # 19. Delete Project
+    del_proj_resp = reboot_client.delete(f"/api/projects/{proj_a_id}", headers=reboot_headers)
+    assert del_proj_resp.status_code == 200
+
+    # 20. Restart backend again
+    database.init_db(db_path=db_path)
+    second_reboot_client = TestClient(app)
+
+    # 21. Verify Project is still deleted
+    reboot2_login = second_reboot_client.post("/api/auth/login", json={"username": user_a, "password": pass_a})
+    reboot2_headers = {"Authorization": f"Bearer {reboot2_login.json()['token']}"}
+    projs_after_del = second_reboot_client.get("/api/projects", headers=reboot2_headers).json()
+    assert not any(p["id"] == proj_a_id for p in projs_after_del)
+
+    # 22. Register User B
+    user_b = "user_beta_step23"
+    pass_b = "SecretPassWordBeta!456"
+    reg_b = second_reboot_client.post("/api/auth/register", json={"username": user_b, "password": pass_b})
+    assert reg_b.status_code == 200
+    token_b = reg_b.json()["token"]
+    headers_b = {"Authorization": f"Bearer {token_b}"}
+
+    # 23. Verify User B cannot see User A's data
+    user_b_projs = second_reboot_client.get("/api/projects", headers=headers_b).json()
+    assert not any(p["id"] == proj_a_id for p in user_b_projs)
+    user_b_forbidden_access = second_reboot_client.get(f"/api/board?project_id={proj_a_id}", headers=headers_b)
+    assert user_b_forbidden_access.status_code in [403, 404]
+
+
+def test_scenario_l_empty_database_returns_zero_cards(isolated_db_environment):
+    """Test L: Empty Database Verification
+    A user with zero cards gets 0 cards, NEVER magic default cards.
+    """
+    db_path = isolated_db_environment
+    client = TestClient(app)
+
+    username = "empty_user_zero"
+    password = "EmptyUserPass!789"
+
+    reg = client.post("/api/auth/register", json={"username": username, "password": password})
+    assert reg.status_code == 200
+    token = reg.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Fetch initial board
+    board_res = client.get("/api/board", headers=headers)
+    assert board_res.status_code == 200
+    board_data = board_res.json()
+
+    # Cards must be empty dict {}
+    assert board_data["cards"] == {}
+    for col in board_data["columns"]:
+        assert col["cardIds"] == []
+
+
+def test_scenario_m_put_api_board_transactional_save(isolated_db_environment):
+    """Test M: PUT /api/board Transactional Save
+    Verify PUT /api/board persists cards, positions, columns, and removes omitted cards atomically.
+    """
+    db_path = isolated_db_environment
+    client = TestClient(app)
+
+    username = "put_board_user"
+    password = "PutBoardPassword!123"
+
+    reg = client.post("/api/auth/register", json={"username": username, "password": password})
+    token = reg.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    projs = client.get("/api/projects", headers=headers).json()
+    proj_id = projs[0]["id"]
+
+    # Initial board
+    init_board = client.get(f"/api/board?project_id={proj_id}", headers=headers).json()
+    col0_id = init_board["columns"][0]["id"]
+    col1_id = init_board["columns"][1]["id"]
+
+    # Construct new full board payload with 2 cards in col0 and 1 card in col1
+    save_payload = {
+        "columns": [
+            {"id": col0_id, "title": "Backlog Priority", "cardIds": ["card-alpha", "card-beta"]},
+            {"id": col1_id, "title": "Discovery Active", "cardIds": ["card-gamma"]},
+        ],
+        "cards": {
+            "card-alpha": {"id": "card-alpha", "title": "Alpha Task", "details": "Alpha Details", "priority": "high"},
+            "card-beta": {"id": "card-beta", "title": "Beta Task", "details": "Beta Details", "priority": "medium"},
+            "card-gamma": {"id": "card-gamma", "title": "Gamma Task", "details": "Gamma Details", "priority": "low"},
+        },
+    }
+
+    put_resp = client.put(f"/api/board?project_id={proj_id}", json=save_payload, headers=headers)
+    assert put_resp.status_code == 200
+    saved_board = put_resp.json()
+
+    assert "card-alpha" in saved_board["cards"]
+    assert "card-beta" in saved_board["cards"]
+    assert "card-gamma" in saved_board["cards"]
+    assert saved_board["cards"]["card-alpha"]["priority"] == "high"
+
+    # Verify directly in fresh client / query
+    fresh_board = client.get(f"/api/board?project_id={proj_id}", headers=headers).json()
+    assert len(fresh_board["cards"]) == 3
+
+    # Now remove card-beta in next save payload and re-save
+    save_payload_2 = {
+        "columns": [
+            {"id": col0_id, "title": "Backlog Priority", "cardIds": ["card-alpha"]},
+            {"id": col1_id, "title": "Discovery Active", "cardIds": ["card-gamma"]},
+        ],
+        "cards": {
+            "card-alpha": {"id": "card-alpha", "title": "Alpha Task", "details": "Alpha Details", "priority": "high"},
+            "card-gamma": {"id": "card-gamma", "title": "Gamma Task", "details": "Gamma Details", "priority": "low"},
+        },
+    }
+    put_resp_2 = client.put(f"/api/board?project_id={proj_id}", json=save_payload_2, headers=headers)
+    assert put_resp_2.status_code == 200
+    saved_board_2 = put_resp_2.json()
+
+    assert "card-beta" not in saved_board_2["cards"]
+    assert len(saved_board_2["cards"]) == 2
+
+

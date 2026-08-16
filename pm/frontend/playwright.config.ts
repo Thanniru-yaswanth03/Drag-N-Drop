@@ -13,14 +13,22 @@ export default defineConfig({
   webServer: [
     {
       command: "python main.py",
-      url: "http://127.0.0.1:8000/api/health",
+      url: "http://127.0.0.1:8008/api/health",
       cwd: "../backend",
+      env: {
+        PORT: "8008",
+        TESTING: "1",
+      },
+
       reuseExistingServer: true,
       timeout: 120_000,
     },
     {
       command: "npm run dev -- --hostname 127.0.0.1 --port 3000",
       url: "http://127.0.0.1:3000",
+      env: {
+        NEXT_PUBLIC_API_URL: "http://127.0.0.1:8008",
+      },
       reuseExistingServer: true,
       timeout: 120_000,
     },
@@ -32,3 +40,4 @@ export default defineConfig({
     },
   ],
 });
+
