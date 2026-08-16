@@ -127,9 +127,9 @@ The application will be accessible at **[http://localhost:8000](http://localhost
 ---
 
 ## 🧪 Testing Suite
-- **Comprehensive Coverage**: 143 total automated tests (85 Pytest backend tests, 44 Vitest frontend unit tests, 14 Playwright end-to-end browser tests).
+- **Comprehensive Coverage**: 144 total automated tests (86 Pytest backend tests, 44 Vitest frontend unit tests, 14 Playwright end-to-end browser tests).
 
-### 1. Backend Pytest Tests (85 Tests)
+### 1. Backend Pytest Tests (86 Tests)
 ```bash
 cd backend
 python -m pytest
