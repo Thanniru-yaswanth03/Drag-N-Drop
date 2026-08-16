@@ -127,8 +127,9 @@ The application will be accessible at **[http://localhost:8000](http://localhost
 ---
 
 ## 🧪 Testing Suite
+- **Comprehensive Coverage**: 143 total automated tests (85 Pytest backend tests, 44 Vitest frontend unit tests, 14 Playwright end-to-end browser tests).
 
-### 1. Backend Pytest Tests (79 Tests)
+### 1. Backend Pytest Tests (85 Tests)
 ```bash
 cd backend
 python -m pytest
@@ -137,7 +138,7 @@ python -m pytest
 ### 2. Frontend Vitest Unit Tests (44 Tests)
 ```bash
 cd frontend
-npm test
+npm run test:unit
 ```
 
 ### 3. Playwright E2E Tests (14 Tests)
@@ -150,7 +151,9 @@ npx playwright test
 
 ## 🔐 Production Hardening & Security
 - **Authentication Protection**: IP-based rate limiting on `/api/auth/login` and `/api/auth/register` (max 15 attempts/minute).
-- **Persistent Database Engine**: Single dynamic path resolver (`DATABASE_PATH=/data/pm.db` on Render with persistent disk), WAL mode, and atomic query-back registration verification.
+- **Persistent Database Engine**: Single dynamic path resolver (`DATABASE_PATH=/data/pm.db` on Render with persistent disk), WAL mode, transactional `PUT /api/board` state synchronization, and atomic query-back registration verification.
+- **Zero-Seed Guarantee**: Clean initial database without hardcoded accounts, demo cards, or deleted data resurrection.
+
 - **Runtime Diagnostics**: Safe `/api/health` and `/api/diagnostics/db` endpoints for inspecting production database metrics without secret exposure.
 - **Git & Container Secrets Exclusion**: `.env` and SQLite database files (`*.db`) are strictly excluded via `.gitignore` and `.dockerignore`.
 

@@ -29,7 +29,7 @@ A modern, enterprise-grade Kanban project management application featuring dynam
 - 🖱️ **Drag and Drop Engine**: Smooth card reordering across workflow columns powered by `@dnd-kit`.
 - 📱 **Mobile Touch & Viewport Optimization**: Vertical stacked column layout on mobile screens (`< 1024px`), touch-sensor activation constraint (`delay: 200ms`, `tolerance: 8px`), `touch-action: none` on card elements to eliminate touch drag glitches, viewport scale controls (`initial-scale=1`, `maximum-scale=1`, `user-scalable=no`), and `-webkit-text-size-adjust: 100%` input rules to prevent iOS Safari auto-zooming.
 - 🔐 **Authentication & Cryptographic Sessions**: Cryptographically random session token generation (`secrets.token_hex(24)`), constant-time PBKDF2-HMAC-SHA256 password hashing with per-user cryptographic salts (100,000 iterations), atomic transaction handling with immediate query-back persistence verification, session verification with expiration, and server-side revocation on logout.
-- 💾 **Authoritative Persistent Database**: Centralized dynamic database path resolver (`DATABASE_PATH=/data/pm.db` on Render with persistent disk), WAL mode concurrency, Foreign Key constraints, and strict `.dockerignore` policies preventing stale SQLite binaries from being baked into images.
+- 💾 **Authoritative Persistent Database**: Centralized dynamic database path resolver (`DATABASE_PATH=/data/pm.db` on Render with persistent disk), WAL mode concurrency, Foreign Key constraints, transactional `PUT /api/board` bulk synchronization, zero hardcoded seed data, and strict `.dockerignore` policies preventing stale SQLite binaries from being baked into images.
 - 🩺 **Runtime Database Diagnostics**: Safe live diagnostic endpoint (`/api/health` and `/api/diagnostics/db`) reporting resolved DB paths, file size, journal mode, and active record counts without exposing secrets.
 - 📁 **Multi-Project Workspace**: Create, switch, rename, and isolate independent Kanban project boards.
 - 🤖 **AI Kanban Assistant & Model Failover**: Conversational AI parsing natural language prompts with model failover stack (`openai/gpt-4o-mini` -> `meta-llama/llama-3.3-70b-instruct` -> `openrouter/auto` -> Smart Local NLP).
@@ -47,19 +47,20 @@ A modern, enterprise-grade Kanban project management application featuring dynam
 - **Framework**: Next.js 16 (App Router with Turbopack), React 19, TypeScript
 - **Styling**: TailwindCSS v4, Custom CSS variables, Glassmorphism design tokens
 - **Drag & Drop**: `@dnd-kit/core`, `@dnd-kit/sortable`
-- **Testing**: Vitest (44 tests across 12 suites), Playwright E2E (14 tests)
+- **Testing**: Vitest (44 unit/component tests across 12 suites), Playwright E2E (14 tests)
 
 ### Backend
 - **Framework**: FastAPI (Python 3.13), Uvicorn ASGI Server
-- **Database**: SQLite3 (WAL Mode, Foreign Keys ON, Busy Timeout 5000ms)
+- **Database**: SQLite3 (WAL Mode, Foreign Keys ON, Busy Timeout 5000ms, Dynamic `/data/pm.db` resolution)
 - **Security**: Cryptographic Session Tokens, PBKDF2-HMAC-SHA256 password hashing (`100,000` iterations)
 - **AI Integration**: OpenRouter API (GPT-4o-mini) with Failover Stack & Smart Local NLP
-- **Testing**: Pytest (79 tests, including Part 28 Adversarial Security & Part 31 Final Production Persistence Verification suites)
+- **Testing**: Pytest (85 tests covering 23-step complete lifecycle, transactional sync, and multi-user isolation)
 
 ### DevOps & Cloud Infrastructure
 - **Containerization**: Docker (`python:3.13-slim`), Root `.dockerignore` for artifact isolation
 - **Hosting**: Render.com (Cloud Backend API with Starter Persistent Disk at `/data`) + Vercel (Edge CDN Frontend)
 - **Version Control**: Git & GitHub (`origin main`)
+
 
 
 ---
