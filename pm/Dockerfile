@@ -35,8 +35,14 @@ COPY backend/ ./
 # Copy static frontend export build into backend static directory
 COPY --from=frontend-builder /app/frontend/out ./static
 
+# Ensure persistent mount directory exists
+RUN mkdir -p /data
+
+ENV DATABASE_PATH=/data/pm.db
+
 # Expose production application port
 EXPOSE 8000
+
 
 # Healthcheck definition
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

@@ -28,6 +28,31 @@ RATE_LIMIT_LOGIN_MAX = int(os.getenv("RATE_LIMIT_LOGIN_MAX", "15"))
 RATE_LIMIT_LOGIN_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_LOGIN_WINDOW_SECONDS", "60"))
 
 # Database & Persistence Configuration
+def get_database_path() -> Path:
+    """Authoritative database path resolver.
+    
+    Order of precedence:
+    1. DATABASE_PATH environment variable (if explicitly set)
+    2. Render Persistent Disk mount directory (/data/pm.db if /data is a directory)
+    3. Container data directory (BASE_DIR / data / pm.db if exists)
+    4. Local development file BASE_DIR / pm.db
+    """
+    env_path = os.getenv("DATABASE_PATH", "").strip()
+    if env_path:
+        return Path(env_path).resolve()
+
+    render_data_dir = Path("/data")
+    if render_data_dir.exists() and render_data_dir.is_dir():
+        return (render_data_dir / "pm.db").resolve()
+
+    container_data_dir = BASE_DIR / "data"
+    if container_data_dir.exists() and container_data_dir.is_dir():
+        return (container_data_dir / "pm.db").resolve()
+
+    return (BASE_DIR / "pm.db").resolve()
+
+
 DATABASE_PATH = os.getenv("DATABASE_PATH", "").strip()
+
 
 

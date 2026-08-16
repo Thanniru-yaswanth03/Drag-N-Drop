@@ -43,7 +43,10 @@ def register_and_login(username: str, password: str = "SecurePass1234") -> dict:
 def test_health_check():
     response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    data = response.json()
+    assert data["status"] == "ok"
+    assert "database" in data
+
 
 
 def test_login_success():

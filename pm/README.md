@@ -128,7 +128,7 @@ The application will be accessible at **[http://localhost:8000](http://localhost
 
 ## 🧪 Testing Suite
 
-### 1. Backend Pytest Tests (38 Tests)
+### 1. Backend Pytest Tests (79 Tests)
 ```bash
 cd backend
 python -m pytest
@@ -137,7 +137,7 @@ python -m pytest
 ### 2. Frontend Vitest Unit Tests (44 Tests)
 ```bash
 cd frontend
-npm test -- --run
+npm test
 ```
 
 ### 3. Playwright E2E Tests (14 Tests)
@@ -150,8 +150,10 @@ npx playwright test
 
 ## 🔐 Production Hardening & Security
 - **Authentication Protection**: IP-based rate limiting on `/api/auth/login` and `/api/auth/register` (max 15 attempts/minute).
-- **Error Response Sanitization**: Global exception handler masks internal Python tracebacks and returns sanitized error JSON.
-- **Git Secrets Exclusion**: `.env` and SQLite database files (`*.db`) are strictly excluded from repository control.
+- **Persistent Database Engine**: Single dynamic path resolver (`DATABASE_PATH=/data/pm.db` on Render with persistent disk), WAL mode, and atomic query-back registration verification.
+- **Runtime Diagnostics**: Safe `/api/health` and `/api/diagnostics/db` endpoints for inspecting production database metrics without secret exposure.
+- **Git & Container Secrets Exclusion**: `.env` and SQLite database files (`*.db`) are strictly excluded via `.gitignore` and `.dockerignore`.
+
 
 ---
 

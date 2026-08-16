@@ -8,9 +8,9 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-import ai
-import database
 import config
+import database
+import ai
 from websocket_manager import ws_manager
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,6 +23,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Drag N Drop API", lifespan=lifespan)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -201,7 +202,17 @@ class AIChatRequest(BaseModel):
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "environment": config.ENVIRONMENT,
+        "database": database.get_database_diagnostics(),
+    }
+
+
+@app.get("/api/diagnostics/db")
+def database_diagnostics():
+    return database.get_database_diagnostics()
+
 
 
 @app.post("/api/auth/register")

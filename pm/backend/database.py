@@ -1,24 +1,45 @@
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import sqlite3
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 
-def _resolve_default_db_path() -> Path:
+import config
+
+logger = logging.getLogger("drag_n_drop.database")
+
+
+_DEFAULT_DB_PATH = config.get_database_path()
+DB_PATH = _DEFAULT_DB_PATH
+
+
+def get_database_path(db_path: Optional[Union[str, Path]] = None) -> Path:
+    """Resolve the authoritative SQLite database path."""
+    if db_path is not None:
+        return Path(db_path).resolve()
+    # 1. Explicit environment variable always takes top precedence
     env_path = os.getenv("DATABASE_PATH", "").strip()
     if env_path:
-        return Path(env_path)
-    container_data_dir = Path("/app/backend/data")
-    if container_data_dir.exists() and container_data_dir.is_dir():
-        return container_data_dir / "pm.db"
-    return Path(__file__).resolve().parent / "pm.db"
+        return Path(env_path).resolve()
+    # 2. Check if DB_PATH was explicitly overridden/monkeypatched on this module
+    current_val = globals().get("DB_PATH")
+    if current_val is not None and current_val is not _DEFAULT_DB_PATH:
+        return Path(current_val).resolve()
+    # 3. Fall back to config resolution
+    return config.get_database_path()
 
-DB_PATH = _resolve_default_db_path()
+
+# Backward compatibility alias
+_resolve_default_db_path = get_database_path
+
+
+
 
 
 def hash_password(password: str, salt: str) -> str:
@@ -40,23 +61,107 @@ def verify_password(password: str, password_hash: str, salt: str) -> bool:
     return hmac.compare_digest(computed_hash, password_hash)
 
 
-def get_db_connection(db_path: Path = None):
-    """Obtain a SQLite database connection with Foreign Keys and WAL mode enabled."""
-    target_path = db_path if db_path is not None else DB_PATH
-    if hasattr(target_path, "parent") and not target_path.parent.exists():
-        try:
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-        except Exception:
-            pass
-    conn = sqlite3.connect(target_path, timeout=30.0)
+def get_db_connection(db_path: Optional[Union[str, Path]] = None) -> sqlite3.Connection:
+    """Obtain an authoritative SQLite database connection with Foreign Keys and WAL mode enabled."""
+    target_path = get_database_path(db_path)
+    try:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        logger.error("Failed to ensure database directory %s exists: %s", target_path.parent, e)
+
+    conn = sqlite3.connect(str(target_path), timeout=30.0)
     try:
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA journal_mode = WAL")
         conn.execute("PRAGMA busy_timeout = 5000")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Could not set SQLite PRAGMAs on %s: %s", target_path, e)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def get_database_diagnostics(db_path: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
+    """Report safe runtime database diagnostic metrics without exposing secrets."""
+    target_path = get_database_path(db_path)
+    file_exists = target_path.is_file()
+    file_size = target_path.stat().st_size if file_exists else 0
+    parent_dir = target_path.parent
+    parent_exists = parent_dir.exists()
+    parent_writable = os.access(str(parent_dir), os.W_OK) if parent_exists else False
+    is_persistent = str(target_path).startswith("/data") or str(parent_dir).startswith("/data")
+
+    journal_mode = "unknown"
+    foreign_keys = 0
+    user_count = 0
+    board_count = 0
+    card_count = 0
+    session_count = 0
+
+    try:
+        conn = get_db_connection(db_path)
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("PRAGMA journal_mode")
+            row = cursor.fetchone()
+            if row:
+                journal_mode = str(row[0])
+        except Exception:
+            pass
+
+        try:
+            cursor.execute("PRAGMA foreign_keys")
+            row = cursor.fetchone()
+            if row:
+                foreign_keys = int(row[0])
+        except Exception:
+            pass
+
+        try:
+            cursor.execute("SELECT COUNT(*) as count FROM users")
+            user_count = int(cursor.fetchone()["count"])
+        except Exception:
+            pass
+
+        try:
+            cursor.execute("SELECT COUNT(*) as count FROM boards")
+            board_count = int(cursor.fetchone()["count"])
+        except Exception:
+            pass
+
+        try:
+            cursor.execute("SELECT COUNT(*) as count FROM cards")
+            card_count = int(cursor.fetchone()["count"])
+        except Exception:
+            pass
+
+        try:
+            cursor.execute("SELECT COUNT(*) as count FROM sessions")
+            session_count = int(cursor.fetchone()["count"])
+        except Exception:
+            pass
+
+        conn.close()
+    except Exception as e:
+        logger.error("Error collecting database diagnostics: %s", e)
+
+    return {
+        "configuredPath": config.DATABASE_PATH or None,
+        "resolvedPath": str(target_path),
+        "fileExists": file_exists,
+        "fileSizeBytes": file_size,
+        "parentDirectory": str(parent_dir),
+        "parentExists": parent_exists,
+        "parentWritable": parent_writable,
+        "isPersistentMount": is_persistent,
+        "journalMode": journal_mode,
+        "foreignKeysEnabled": bool(foreign_keys),
+        "userCount": user_count,
+        "boardCount": board_count,
+        "cardCount": card_count,
+        "sessionCount": session_count,
+    }
+
 
 
 def init_db(db_path: Path = None):
@@ -279,65 +384,101 @@ def revoke_session(token: str, db_path: Path = None) -> bool:
     return True
 
 
-def register_user(username: str, password: str, db_path: Path = None) -> dict:
+def register_user(username: str, password: str, db_path: Optional[Union[str, Path]] = None) -> dict:
     """Register a unique user account, hash the password with a cryptographic salt,
-    and initialize their first project once.
+    verify persistence immediately, and initialize their first project.
     """
     username_clean = username.strip().lower()
     if not username_clean or len(password) < 4:
         return {"success": False, "error": "Username must be non-empty and password at least 4 characters."}
 
+    resolved_path = get_database_path(db_path)
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id FROM users WHERE LOWER(username) = ?", (username_clean,))
-    existing_row = cursor.fetchone()
-    if existing_row:
+    try:
+        cursor.execute("SELECT id FROM users WHERE LOWER(username) = ?", (username_clean,))
+        existing_row = cursor.fetchone()
+        if existing_row:
+            conn.close()
+            return {"success": False, "error": "Username is already taken."}
+
+        user_id = f"user-{uuid.uuid4().hex[:8]}"
+        salt = secrets.token_hex(16)
+        hashed = hash_password(password, salt)
+
+        cursor.execute(
+            "INSERT INTO users (id, username, password_hash, password_salt) VALUES (?, ?, ?, ?)",
+            (user_id, username_clean, hashed, salt),
+        )
+        conn.commit()
+
+        # Immediate verification query-back to ensure persistence
+        cursor.execute("SELECT id, username FROM users WHERE id = ?", (user_id,))
+        verified = cursor.fetchone()
+        if not verified or verified["username"].lower() != username_clean:
+            conn.rollback()
+            conn.close()
+            logger.error("REGISTER_FAILED verification query failed for user=%s db=%s", username_clean, str(resolved_path))
+            return {"success": False, "error": "Failed to persist user credentials to database."}
+
         conn.close()
-        return {"success": False, "error": "Username is already taken."}
+        logger.info("REGISTER user=%s db=%s committed=true", username_clean, str(resolved_path))
 
-    user_id = f"user-{uuid.uuid4().hex[:8]}"
-    salt = secrets.token_hex(16)
-    hashed = hash_password(password, salt)
+        # Create initial starter project once for the newly verified user
+        create_project(username_clean, name="Main Project", db_path=db_path)
 
-    cursor.execute(
-        "INSERT INTO users (id, username, password_hash, password_salt) VALUES (?, ?, ?, ?)",
-        (user_id, username_clean, hashed, salt),
-    )
-    conn.commit()
-    conn.close()
-
-    # Create initial starter project once for the new user
-    create_project(username_clean, name="Main Project", db_path=db_path)
-
-    return create_session(username_clean, db_path=db_path)
+        # Generate authenticated session
+        return create_session(username_clean, db_path=db_path)
+    except Exception as e:
+        try:
+            conn.rollback()
+            conn.close()
+        except Exception:
+            pass
+        logger.error("REGISTER_ERROR user=%s db=%s error=%s", username_clean, str(resolved_path), e)
+        return {"success": False, "error": f"Registration failed: {str(e)}"}
 
 
-def authenticate_user(username: str, password: str, db_path: Path = None) -> Optional[dict]:
-    """Authenticate a user using constant-time password hash verification."""
+def authenticate_user(username: str, password: str, db_path: Optional[Union[str, Path]] = None) -> Optional[dict]:
+    """Authenticate a user using constant-time password hash verification against the authoritative database."""
     username_clean = username.strip().lower()
+    resolved_path = get_database_path(db_path)
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
 
-    cursor.execute(
-        "SELECT id, username, password_hash, password_salt FROM users WHERE LOWER(username) = ?",
-        (username_clean,)
-    )
-    row = cursor.fetchone()
-    conn.close()
+    try:
+        cursor.execute(
+            "SELECT id, username, password_hash, password_salt FROM users WHERE LOWER(username) = ?",
+            (username_clean,)
+        )
+        row = cursor.fetchone()
+        conn.close()
 
-    if not row:
+        if not row:
+            logger.warning("LOGIN_FAILED user=%s db=%s reason=user_not_found", username_clean, str(resolved_path))
+            return None
+
+        salt = row["password_salt"] or "legacy"
+        if verify_password(password, row["password_hash"], salt):
+            logger.info("LOGIN_SUCCESS user=%s db=%s", username_clean, str(resolved_path))
+            return create_session(row["username"], db_path=db_path)
+
+        # Legacy backward compatibility check with old static salt if migrating
+        if salt == "legacy" and verify_password(password, row["password_hash"], "drag_n_drop_salt"):
+            logger.info("LOGIN_SUCCESS_LEGACY user=%s db=%s", username_clean, str(resolved_path))
+            return create_session(row["username"], db_path=db_path)
+
+        logger.warning("LOGIN_FAILED user=%s db=%s reason=invalid_password", username_clean, str(resolved_path))
+        return None
+    except Exception as e:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        logger.error("LOGIN_ERROR user=%s db=%s error=%s", username_clean, str(resolved_path), e)
         return None
 
-    salt = row["password_salt"] or "legacy"
-    if verify_password(password, row["password_hash"], salt):
-        return create_session(row["username"], db_path=db_path)
-
-    # Legacy backward compatibility check with old static salt if migrating
-    if salt == "legacy" and verify_password(password, row["password_hash"], "drag_n_drop_salt"):
-        return create_session(row["username"], db_path=db_path)
-
-    return None
 
 
 def get_projects(user_id: str, db_path: Path = None) -> List[Dict[str, Any]]:

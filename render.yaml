@@ -2,6 +2,7 @@ services:
   - type: web
     name: drag-n-drop-backend
     env: docker
+    plan: starter
     dockerfilePath: Dockerfile
     disk:
       name: pm-data
@@ -14,4 +15,5 @@ services:
         value: /data/pm.db
       - key: CORS_ORIGINS
         value: "*"
+
 
