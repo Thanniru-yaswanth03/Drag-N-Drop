@@ -169,7 +169,7 @@ def build_pdf(pdf_path):
         [Paragraph("Security & Auth", body_style), Paragraph("Cryptographic Session Tokens, Bearer / X-Session Headers, PBKDF2, RBAC Guard", body_style), Paragraph("secrets.token_hex(32) session tokens, Authorization Bearer headers, logout revocation, IDOR prevention, and RBAC hierarchy.", body_style)],
         [Paragraph("AI Assistant", body_style), Paragraph("OpenRouter API (GPT-4o-mini) + Model Failover Stack", body_style), Paragraph("Parses natural language prompts with failover (GPT-4o-mini -> Llama 3.3 70B -> Auto -> Smart Local NLP).", body_style)],
         [Paragraph("DevOps & Cloud", body_style), Paragraph("Docker, Render.com, Vercel, GitHub Actions", body_style), Paragraph("Containerized Python backend on Render + static Edge CDN frontend hosting on Vercel.", body_style)],
-        [Paragraph("Testing", body_style), Paragraph("Pytest (62), Vitest (44), Playwright E2E (14)", body_style), Paragraph("Comprehensive 120-test automated suite covering backend API, security audit, data persistence, frontend UI, and E2E browser flows.", body_style)],
+        [Paragraph("Testing", body_style), Paragraph("Pytest (80), Vitest (44), Playwright E2E (14)", body_style), Paragraph("Comprehensive 138-test automated suite covering backend API, security audit, database path persistence, frontend UI, and E2E browser flows.", body_style)],
     ]
     t = Table(tech_data, colWidths=[70, 190, 244])
     t.setStyle(TableStyle([
@@ -187,19 +187,18 @@ def build_pdf(pdf_path):
     story.append(Paragraph("Below is a breakdown of every single file in the repository and its exact technical responsibility:", body_style))
     
     file_items = [
-        ("Dockerfile (Root)", "Multi-stage Python 3.13 container definition for building and running the FastAPI backend on cloud hosts (Render/Railway). Installs system dependencies, copies requirements, and launches uvicorn on port 8000."),
-        ("render.yaml (Root)", "Render Blueprint deployment configuration file. Configures automatic container builds from root Dockerfile and passes CORS_ORIGINS and PORT environment variables."),
-        ("README.md (Root)", "Project documentation detailing live demo links, architecture overview, screenshot previews, data persistence guarantees, and setup instructions."),
-        ("pm/backend/main.py", "FastAPI application entry point. Defines REST endpoints (/api/auth/register, /api/auth/login, /api/projects, /api/board, /api/cards, /api/ai/chat) with header authentication and authenticated WebSocket route (/ws/projects/{id})."),
-        ("pm/backend/database.py", "Core SQLite database layer. Contains schema definitions, sessions table, PBKDF2 password hashing, RBAC permission checks (Owner, Admin, Member, Viewer, None), CRUD operations, project-member board updates, and default board seeding."),
+        ("Dockerfile (Root)", "Multi-stage Python 3.13 container definition for building and running the FastAPI backend on cloud hosts (Render/Railway). Creates /data mount, configures DATABASE_PATH=/data/pm.db, and launches uvicorn on port 8000."),
+        (".dockerignore (Root)", "Docker ignore configuration strictly excluding local SQLite *.db binaries, .env, and cache files, ensuring pristine container builds without baked stale data."),
+        ("render.yaml (Root)", "Render Blueprint deployment configuration file. Configures automatic container builds with Starter plan and 1GB persistent disk at /data for database persistence."),
+        ("README.md (Root)", "Project documentation detailing live demo links, architecture overview, screenshot previews, data persistence guarantees, diagnostics endpoints, and setup instructions."),
+        ("pm/backend/main.py", "FastAPI application entry point. Defines REST endpoints (/api/auth/register, /api/auth/login, /api/projects, /api/board, /api/cards, /api/health/db, /api/ai/chat) with header authentication and authenticated WebSocket route (/ws/projects/{id})."),
+        ("pm/backend/database.py", "Core SQLite database layer. Contains schema definitions, sessions table, dynamic path resolution, connection hardening (WAL mode, Foreign Keys ON, busy_timeout=5000), PBKDF2 password hashing with per-user salt, atomic registration verification, RBAC permission checks, and safe diagnostics."),
         ("pm/backend/ai.py", "AI Assistant logic. Integrates OpenRouter API with model failover stack (gpt-4o-mini -> llama-3.3-70b -> auto -> smart local NLP) to execute structured board mutations."),
         ("pm/backend/websocket_manager.py", "ConnectionManager class managing real-time WebSocket client connections and broadcasting board updates to connected project members."),
-        ("pm/backend/config.py", "Environment configuration loader with override=True for reading OPENROUTER_API_KEY, database paths, CORS origin lists, and API keys."),
-        ("pm/backend/pm.db", "SQLite binary database file storing persistent users, projects, columns, cards, member roles, and activity logs."),
-        ("pm/backend/requirements.txt", "Backend Python dependencies list (fastapi, uvicorn, pydantic, pytest, python-dotenv, httpx, reportlab)."),
-        ("pm/backend/test_database.py", "Pytest database regression test suite including test_card_persistence_across_logout_and_login validating data preservation after user session logout/login cycles."),
+        ("pm/backend/config.py", "Centralized configuration and database path resolver (get_database_path). Manages environment variables, CORS origin lists, and API keys."),
+        ("pm/backend/test_production_persistence_verification.py", "Automated end-to-end persistence suite (10 scenarios) verifying registration, login, connection boundaries, backend restart data preservation, user data isolation, and deletion persistence."),
+        ("pm/backend/test_database.py", "Pytest database regression test suite validating CRUD operations, foreign keys, and persistent data preservation."),
         ("pm/backend/test_security_audit.py & test_part28_adversarial_security.py", "Pytest security regression test suite validating session token security, token revocation on logout, IDOR prevention, RBAC role restrictions, unauthenticated WebSocket rejection, and AI prompt injection resistance."),
-        ("pm/docs/FINAL_RELEASE_CERTIFICATION.md & PLAN.md", "Final Release Certification & Part 29 implementation roadmap documenting complete architecture sign-off and 120 automated test passes."),
         ("pm/frontend/src/app/page.tsx & layout.tsx", "Next.js App Router root layout and primary page shell rendering the main Kanban interface with mobile viewport scale control."),
         ("pm/frontend/src/app/globals.css", "Global TailwindCSS v4 stylesheet containing modern theme CSS variables, glassmorphism card utilities, glowing animations, 16px mobile input rules, and vertical mobile column layout rules."),
         ("pm/frontend/src/components/KanbanBoard.tsx", "Core frontend board orchestrator. Manages user auth state, project switcher, undo/redo history, WebSocket real-time sync, @dnd-kit sensors (200ms delay, 8px tolerance), database single-source-of-truth loading, and column grid."),
@@ -219,15 +218,15 @@ def build_pdf(pdf_path):
     story.append(Paragraph("4. Core Site Logic & Key Functionalities", h1_style))
     
     funcs = [
-        ("Authentication & Session Management", "Users sign in or register new accounts. Username strings are automatically sanitized and lower-cased. Passwords are salted and hashed using PBKDF2-HMAC-SHA256 (100,000 iterations). Active sessions issue secrets.token_hex(32) tokens passed in Authorization: Bearer & X-Session-Token headers, and logout revokes tokens in SQLite."),
-        ("Persistent Database State Engine", "Guaranteed SQLite database persistence across login/logout sessions, project switching, and multi-user interactions. Eliminates stale pre-fetch demo card resets and uses DB state as single source of truth with clean loading states."),
+        ("Authentication & Session Management", "Users sign in or register new accounts. Username strings are automatically sanitized and lower-cased. Passwords are salted and hashed using PBKDF2-HMAC-SHA256 (100,000 iterations). Active sessions issue secrets.token_hex(24) tokens passed in Authorization: Bearer & X-Session-Token headers, and logout revokes tokens in SQLite."),
+        ("Authoritative Database Persistence Engine", "Centralized dynamic path resolver (DATABASE_PATH=/data/pm.db on Render with 1GB persistent disk), WAL mode concurrency, atomic transaction query-back verification, and complete immunity from container restart data loss."),
         ("Multi-Project Isolation & IDOR Protection", "Users create, rename, switch between, and delete independent Kanban projects. Every backend API endpoint validates project permissions before allowing access or mutation."),
         ("Drag & Drop Engine (Desktop + Mobile)", "Powered by @dnd-kit. Features PointerSensor, MouseSensor, and TouchSensor (with a 200ms delay, 8px tolerance, and touch-action: none). On mobile screens, columns stack vertically to eliminate horizontal scroll issues."),
         ("Mobile Viewport Zoom & Sizing Optimization", "Exported viewport metadata in Next.js layout.tsx (initialScale: 1, maximumScale: 1, userScalable: false) and minimum 16px font-size input rules prevent iOS Safari auto-zooming on focus."),
         ("Security & RBAC Enforcement", "Backend endpoints enforce role hierarchy checks (Owner > Admin > Member > Viewer > None). Card mutations verify user membership before executing SQLite updates."),
         ("Real-Time WebSockets Sync", "When multiple users collaborate on the same project, board updates (card moves, edits, deletions) are instantly broadcast via WebSockets (/ws/projects/{id}) with token authentication."),
         ("AI Kanban Assistant & Model Failover", "Embedded chat drawer enables users to manage their board with natural language. Powered by OpenRouter API with multi-model failover stack (gpt-4o-mini -> llama-3.3-70b-instruct -> auto -> local NLP)."),
-        ("Activity Log & Notification System", "Every project action (adding cards, editing titles, changing priority) is logged in SQLite and presented in interactive modal dialogs."),
+        ("Live Runtime Diagnostics", "Safe diagnostic endpoints (/api/health, /api/health/db, /api/diagnostics/db) reporting resolved database path, existence, file size, journal mode, and active entity row counts without secret exposure."),
     ]
 
     for title, desc in funcs:
@@ -236,12 +235,12 @@ def build_pdf(pdf_path):
     story.append(Spacer(1, 10))
 
     # Testing Methodology
-    story.append(Paragraph("5. Complete Testing Methodology (120 Automated Tests)", h1_style))
+    story.append(Paragraph("5. Complete Testing Methodology (138 Automated Tests)", h1_style))
     story.append(Paragraph(
-        "The application is validated by an automated test suite comprising <b>120 total tests</b> across 3 distinct test runners:",
+        "The application is validated by an automated test suite comprising <b>138 total tests</b> across 3 distinct test runners:",
         body_style
     ))
-    story.append(Paragraph("• <b>Pytest (62 Tests)</b>: Validates backend REST routes, SQLite database schemas, PBKDF2 password hashing, cryptographic session tokens, persistent card/board data preservation across sessions (test_card_persistence_across_logout_and_login), RBAC permission checks, IDOR isolation, AI prompt injection resistance, default user account password hashing, and Part 28 adversarial security scenarios.", bullet_style))
+    story.append(Paragraph("• <b>Pytest (80 Tests)</b>: Validates backend REST routes, SQLite database schemas, PBKDF2 password hashing, cryptographic session tokens, persistent card/board data preservation across sessions, full restart lifecycle verification, RBAC permission checks, IDOR isolation, AI prompt injection resistance, and Part 28 adversarial security scenarios.", bullet_style))
     story.append(Paragraph("• <b>Vitest (44 Tests across 12 Suites)</b>: Unit tests frontend helper utilities (filterAndSortBoard, moveCard, useUndoRedo) and React UI components (LoginForm, TaskFilterToolbar, ProjectSwitcher, KanbanBoard).", bullet_style))
     story.append(Paragraph("• <b>Playwright E2E (14 Tests)</b>: Automated end-to-end browser tests in Headless Chromium. Verifies full user sign-in, task creation, dragging cards across columns, mobile viewport responsiveness, and multi-user login workflows.", bullet_style))
 
@@ -252,24 +251,24 @@ def build_pdf(pdf_path):
     story.append(Paragraph(
         "<b>Why Docker?</b><br/>"
         "Docker packages the Python runtime, FastAPI dependencies, Uvicorn server, and SQLite database into a standardized, "
-        "lightweight Linux container. This eliminates 'it works on my machine' issues and ensures identical execution across local dev and cloud servers.",
+        "lightweight Linux container. Root .dockerignore rules ensure local *.db binaries are never baked into container images.",
         body_style
     ))
     story.append(Spacer(1, 4))
     story.append(Paragraph(
-        "<b>Render Cloud Backend Hosting</b>:<br/>"
-        "Render reads the root <code>render.yaml</code> and builds the Docker container. It exposes port 8000 and serves CORS-enabled API requests. "
-        "Note: Render free instances spin down after 15 minutes of inactivity; the initial request takes ~30 seconds for cold-start initialization.",
+        "<b>Render Cloud Backend Hosting with Persistent Storage</b>:<br/>"
+        "Render reads the root <code>render.yaml</code> and builds the Docker container. It attaches a 1GB persistent disk at <code>/data</code> "
+        "(<code>DATABASE_PATH=/data/pm.db</code>) on Starter plan, guaranteeing database preservation across deployments and container restarts.",
         body_style
     ))
     story.append(Spacer(1, 4))
     story.append(Paragraph(
         "<b>Vercel Frontend Hosting & Environment Variables</b>:<br/>"
         "Vercel hosts the Next.js static production bundle on an Edge CDN. The environment variable <code>NEXT_PUBLIC_API_URL</code> "
-        "points to the Render backend URL (<code>https://drag-n-drop-28p3.onrender.com</code>). Because Next.js inlines <code>NEXT_PUBLIC_</code> "
-        "variables at build time, updating this variable triggers a fresh Vercel rebuild to embed the live endpoint into the web app.",
+        "points to the Render backend URL (<code>https://drag-n-drop-28p3.onrender.com</code>).",
         body_style
     ))
+
 
     # Build PDF
     doc.build(story, canvasmaker=NumberedCanvas)
@@ -307,11 +306,11 @@ def create_markdown_file(md_path):
 | **Styling & UI** | TailwindCSS v4, CSS Modules, Lucide Icons | Custom design system, glassmorphism card surfaces, and dark/light mode tokens. |
 | **Drag & Drop** | `@dnd-kit/core`, `@dnd-kit/sortable` | Touch & pointer sensors (`delay: 200ms`, `tolerance: 8px`, `touch-action: none`) for desktop & mobile. |
 | **Backend Framework** | FastAPI (Python 3.13), Uvicorn ASGI | Asynchronous REST routing, WebSocket connection handling, and rate limiting. |
-| **Database** | SQLite3 (WAL Mode), Python `sqlite3` module | Persistent storage for users, projects, columns, cards, members, and activity logs. |
-| **AI Integration** | Rule Engine + Google Gemini API | Converts natural text prompts into structured JSON board mutation payloads. |
-| **Containerization** | Docker (`python:3.13-slim`) | Standardized Linux container packaging backend code and dependencies. |
-| **Cloud Hosting** | Render.com (Backend) & Vercel (Frontend) | Docker container API deployment on Render + Edge CDN distribution on Vercel. |
-| **Testing Suite** | Pytest (62), Vitest (44), Playwright (14) | 120 automated unit, component, integration, data persistence, and E2E browser tests. |
+| **Database** | SQLite3 (WAL Mode, Foreign Keys ON, 5s timeout) | Persistent storage for users, projects, columns, cards, members, sessions, and activity logs. |
+| **AI Integration** | OpenRouter API (GPT-4o-mini) + Model Failover Stack | Converts natural text prompts into structured JSON board mutation payloads. |
+| **Containerization** | Docker (`python:3.13-slim`), Root `.dockerignore` | Standardized Linux container packaging with strict exclusion of local DB artifacts. |
+| **Cloud Hosting** | Render.com (Backend API with 1GB Persistent Disk) & Vercel (Frontend) | Persistent SQLite container API on Render + Edge CDN distribution on Vercel. |
+| **Testing Suite** | Pytest (80), Vitest (44), Playwright (14) | 138 automated unit, component, integration, data persistence, and E2E browser tests. |
 
 ---
 
@@ -319,8 +318,9 @@ def create_markdown_file(md_path):
 
 ```
 Drag_N_Drop/
-├── Dockerfile                        # Root Docker container definition for backend cloud deployment
-├── render.yaml                        # Render Blueprint deployment configuration
+├── Dockerfile                        # Root Docker container definition with /data persistent mount
+├── .dockerignore                     # Docker ignore rules excluding *.db binaries and dev caches
+├── render.yaml                        # Render Blueprint deployment with Starter persistent disk (/data)
 ├── README.md                          # Project repository overview and live links
 ├── documentation/                     # Dedicated documentation folder
 │   ├── Kanban_Studio_Pro_Master_Documentation.pdf
@@ -328,18 +328,17 @@ Drag_N_Drop/
 │   └── generate_docs.py              # Automated master PDF & Markdown documentation generator
 └── pm/
     ├── backend/                       # Python FastAPI Backend Service
-    │   ├── main.py                    # REST & WebSocket API endpoints
-    │   ├── database.py                # SQLite schema, queries, password hashing, RBAC
+    │   ├── main.py                    # REST & WebSocket API endpoints & /api/health/db diagnostic route
+    │   ├── database.py                # SQLite schema, queries, PBKDF2 hashing, RBAC, safe diagnostics
     │   ├── ai.py                      # AI Assistant rule engine & Gemini API integration
     │   ├── websocket_manager.py       # Real-time WebSocket connection broadcaster
-    │   ├── config.py                  # Environment variable configuration loader
-    │   ├── pm.db                      # SQLite binary database file
-    │   ├── requirements.txt           # Python dependencies (fastapi, uvicorn, pytest)
+    │   ├── config.py                  # Dynamic database path resolver (get_database_path) & config loader
+    │   ├── requirements.txt           # Python dependencies (fastapi, uvicorn, pytest, reportlab)
     │   ├── test_main.py               # Pytest suite for FastAPI REST endpoints
     │   ├── test_database.py           # Pytest suite for SQLite database functions & data persistence
-    │   ├── test_ai.py                 # Pytest suite for AI assistant handler
-    │   ├── test_schema.py             # Pytest suite for Pydantic schema validation
-    │   └── test_security.py           # Pytest suite for RBAC & password security
+    │   ├── test_production_persistence_verification.py # Automated end-to-end persistence suite (10 scenarios)
+    │   ├── test_security_audit.py     # Pytest security audit suite
+    │   └── test_part28_adversarial_security.py # Pytest adversarial security suite
     └── frontend/                      # Next.js Frontend Web Application
         ├── package.json               # NPM scripts and frontend dependencies
         ├── playwright.config.ts       # Playwright E2E browser test configuration
@@ -349,7 +348,7 @@ Drag_N_Drop/
         │   ├── app/
         │   │   ├── page.tsx           # Next.js main page shell
         │   │   ├── layout.tsx         # Next.js root layout with mobile viewport scale metadata
-        │   │   └── globals.css        # Global CSS, theme variables, 16px mobile input rules, vertical mobile columns
+        │   │   └── globals.css        # Global CSS, theme variables, 16px mobile input rules
         │   ├── components/
         │   │   ├── KanbanBoard.tsx    # Core board orchestrator & dnd-kit context
         │   │   ├── KanbanColumn.tsx   # Column container component
@@ -378,32 +377,28 @@ Drag_N_Drop/
 
 ### 🔑 Auth & Session Management
 - **Registration & Sign-In**: Users register with username and password. Usernames are automatically lower-cased and sanitized.
-- **Password Hashing**: Passwords are hashed with PBKDF2-HMAC-SHA256 (`100,000` iterations) and salted per user.
-- **Header Authentication**: Active sessions issue `secrets.token_hex(32)` tokens passed via `Authorization: Bearer` and `X-Session-Token` headers.
-- **Default Account Provisioning**: Auto-provisioned system accounts (`user`, `testuser`) initialize with clean password hashing (`password`) and allow account registration overwrites.
+- **Password Hashing**: Passwords are hashed with PBKDF2-HMAC-SHA256 (`100,000` iterations) and salted per user with cryptographic random salts.
+- **Header Authentication**: Active sessions issue `secrets.token_hex(24)` tokens passed via `Authorization: Bearer` and `X-Session-Token` headers.
+- **Session Revocation**: Logout actively removes session tokens from SQLite.
 
 ### 💾 Persistent Database State Engine
-- **Single Source of Truth**: Guaranteed SQLite database state loading on login and project switching, eliminating stale demo card overwrites.
-- **Decoupled Async Persistence**: Card operations (drag-and-drop, title edit, priority, due date) update React state cleanly and persist to backend SQLite tables.
+- **Single Source of Truth**: Centralized dynamic database path resolver (`DATABASE_PATH=/data/pm.db` on Render with persistent disk).
+- **Atomic Registration Verification**: Transactions commit and immediately verify user persistence with query-back validation.
+- **Decoupled Async Persistence**: Card operations (drag-and-drop, title edit, priority, due date) persist cleanly to backend SQLite tables with WAL mode concurrency.
+
+### 🩺 Live Runtime Diagnostics
+- **Safe Health Endpoints**: `/api/health`, `/api/health/db`, and `/api/diagnostics/db` report resolved DB path, file size, journal mode, and row counts (`users`, `boards`, `cards`, `sessions`) with zero secret leakage.
 
 ### 📱 Responsive Mobile Layout & Touch Drag & Drop
 - **Vertical Mobile Stack**: On screens `< 1024px`, columns stack vertically (`flex flex-col gap-6 w-full`) to eliminate horizontal scrollbars.
-- **TouchSensor Integration**: Touch activations require `delay: 200ms` and `tolerance: 8px` with `touch-action: none` on card surfaces, allowing smooth page scrolling without accidental touch drag glitches.
-- **Mobile Viewport Zoom Prevention**: Next.js layout metadata (`width: device-width`, `initialScale: 1`, `maximumScale: 1`, `userScalable: false`) + `-webkit-text-size-adjust: 100%` + minimum `16px` font-size on input focus prevents iOS Safari auto-zooming.
-
-### 🛡️ Security & RBAC Permission System
-- Projects check user roles (`owner`, `member`, `viewer`).
-- Database verifies member access before allowing card additions, edits, or deletions.
-
-### 🤖 AI Kanban Assistant Engine
-- Users type prompts like *"Add urgent task Fix SSL to To Do"*.
-- The AI engine parses input, generates structured JSON board updates, and automatically updates the database and frontend UI.
+- **TouchSensor Integration**: Touch activations require `delay: 200ms` and `tolerance: 8px` with `touch-action: none` on card surfaces.
+- **Mobile Viewport Zoom Prevention**: Next.js layout metadata + `-webkit-text-size-adjust: 100%` + minimum `16px` font-size on inputs.
 
 ---
 
-## 5. Testing Architecture (120 Total Tests — 100% Pass Rate)
+## 5. Testing Architecture (138 Total Tests — 100% Pass Rate)
 
-1. **Pytest (62 Backend Tests)**: Verifies REST endpoints, database schema, PBKDF2 hashing, RBAC permissions, cryptographic session tokens, persistent data loss verification (`test_card_persistence_across_logout_and_login`), IDOR isolation, default account password hashing, and Part 28 adversarial security scenarios.
+1. **Pytest (80 Backend Tests)**: Verifies REST endpoints, database schema, PBKDF2 hashing, RBAC permissions, cryptographic session tokens, persistent card/board data preservation across sessions, full restart lifecycle verification, IDOR isolation, and Part 28 adversarial security scenarios.
 2. **Vitest (44 Frontend Tests across 12 Suites)**: Tests React components, filter utilities, undo/redo state hooks, activity modals, notification center, project switcher, and auth form handlers.
 3. **Playwright (14 E2E Tests)**: Automates Chromium browser interactions covering sign-in, card dragging, filtering, mobile viewport rendering, and multi-user login workflows.
 
@@ -411,23 +406,24 @@ Drag_N_Drop/
 
 ## 6. DevOps: Docker, Render & Vercel Deployment
 
-### 🐳 Why Docker?
-Docker packages the Python 3.13 environment, FastAPI server, Uvicorn ASGI runner, and SQLite database into a self-contained container, guaranteeing identical execution across local dev and production servers.
+### 🐳 Docker Containerization
+Docker packages the Python 3.13 environment, FastAPI server, Uvicorn ASGI runner, and SQLite database into a self-contained container. Root `.dockerignore` excludes local DB files.
 
 ### ☁️ Render Cloud Backend (`render.yaml` & `Dockerfile`)
-Render pulls the repository, builds the root `Dockerfile`, exposes port `8000`, and serves CORS-enabled REST & WebSocket APIs.
+Render pulls the repository, builds the root `Dockerfile`, mounts a 1GB persistent disk at `/data` (`DATABASE_PATH=/data/pm.db`) on Starter plan, and serves CORS-enabled REST & WebSocket APIs at `https://drag-n-drop-28p3.onrender.com`.
 
 ### ⚡ Vercel Edge Frontend Deployment
 Vercel hosts the Next.js static bundle on an Edge CDN. The environment variable `NEXT_PUBLIC_API_URL` points to the live Render backend (`https://drag-n-drop-28p3.onrender.com`).
+Live URL: `https://drag-n-drop-lilac.vercel.app/`.
 
 ---
 
-## 7. Release Certification & Part 29 Final Status
+## 7. Release Certification Status
 
 - **Release Classification**: **`PRODUCTION READY`**
 - **Security Audit Status**: 0 Critical (P0) or High (P1) Vulnerabilities
-- **Part 28 Verification**: Passed independent adversarial security audit (`test_part28_adversarial_security.py`).
-- **Part 29 Verification**: Passed final production deployment, test suite execution (120 automated tests passing 100%), persistent data loss regression testing, master documentation sync, and repository GitHub release packaging.
+- **Verification Suites**: Passed all 138 automated unit, security, and persistence lifecycle tests.
+
 """
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(content)
