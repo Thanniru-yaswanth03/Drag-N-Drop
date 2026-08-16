@@ -15,5 +15,10 @@ services:
         value: /data/pm.db
       - key: CORS_ORIGINS
         value: "*"
+      - key: ENVIRONMENT
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+
 
 

@@ -21,8 +21,19 @@ OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini").strip()
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Production Hardening & Security Configuration
-ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip()
-SECRET_KEY = os.getenv("SECRET_KEY", "drag_n_drop_dev_secret_key_2026").strip()
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()
+
+_raw_secret_key = os.getenv("SECRET_KEY", "").strip()
+if _raw_secret_key and _raw_secret_key != "drag_n_drop_dev_secret_key_2026":
+    SECRET_KEY = _raw_secret_key
+elif ENVIRONMENT in ("development", "test", ""):
+    SECRET_KEY = _raw_secret_key or "drag_n_drop_dev_secret_key_2026"
+else:
+    raise RuntimeError(
+        "CRITICAL CONFIGURATION ERROR: A dedicated SECRET_KEY environment variable is required in production. "
+        "Set SECRET_KEY in your deployment environment or host dashboard."
+    )
+
 CORS_ORIGINS = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "*").split(",") if origin.strip()]
 RATE_LIMIT_LOGIN_MAX = int(os.getenv("RATE_LIMIT_LOGIN_MAX", "15"))
 RATE_LIMIT_LOGIN_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_LOGIN_WINDOW_SECONDS", "60"))
