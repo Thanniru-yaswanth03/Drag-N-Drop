@@ -6,8 +6,11 @@
 
 # Databases & Runtime State
 *.db
+*.db-shm
+*.db-wal
 *.sqlite3
 pm/backend/pm.db
+
 
 # Node dependencies & Next.js builds
 node_modules/

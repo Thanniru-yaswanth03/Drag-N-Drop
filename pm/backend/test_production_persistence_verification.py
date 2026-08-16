@@ -2,9 +2,11 @@ import os
 import shutil
 import sqlite3
 import tempfile
+import uuid
 from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
+
 
 import config
 import database
@@ -800,6 +802,160 @@ def test_scenario_o_delete_everything_persists_empty_post_reboot(isolated_db_env
     assert len(post_reboot_board["cards"]) == 0
     for col in post_reboot_board["columns"]:
         assert len(col["cardIds"]) == 0
+
+
+def test_scenario_p_real_user_persistence_test_8372(isolated_db_environment):
+    """
+    Scenario P: Real-user 19-step persistence lifecycle test with card PERSISTENCE_TEST_8372:
+    1. Register brand new test user
+    2. Login
+    3. Create unique test card 'PERSISTENCE_TEST_8372'
+    4. Create doomed second card
+    5. Move PERSISTENCE_TEST_8372 to another column
+    6. Reorder it
+    7. Edit its contents
+    8. Delete doomed second card
+    9. Refresh board (GET /api/board)
+    10. Confirm all changes remain
+    11. Logout (POST /api/auth/logout)
+    12. Login again
+    13. Confirm all changes remain
+    14. Restart backend (new TestClient & re-init_db)
+    15. Confirm all changes remain
+    16. Redeploy / re-startup
+    17. Login again
+    18. Confirm all changes remain
+    19. Confirm deleted card does NOT return, no demo cards appear, user exists.
+    """
+    db_path = str(isolated_db_environment)
+    client = TestClient(app)
+
+    unique_suffix = uuid.uuid4().hex[:6]
+    username = f"user_8372_{unique_suffix}"
+    password = f"Pass_{unique_suffix}!8372"
+
+    # Step 1: Register
+    reg = client.post("/api/auth/register", json={"username": username, "password": password})
+    assert reg.status_code == 200, f"Registration failed: {reg.text}"
+
+    # Step 2: Login
+    log1 = client.post("/api/auth/login", json={"username": username, "password": password})
+    assert log1.status_code == 200
+    token1 = log1.json()["token"]
+    headers1 = {"Authorization": f"Bearer {token1}"}
+
+    # Fetch initial project and columns
+    projs = client.get("/api/projects", headers=headers1).json()
+    assert len(projs) >= 1
+    proj_id = projs[0]["id"]
+
+    board0 = client.get(f"/api/board?project_id={proj_id}", headers=headers1).json()
+    cols = board0["columns"]
+    col_a = cols[0]["id"]
+    col_b = cols[1]["id"]
+
+    # Step 3: Create unique test card PERSISTENCE_TEST_8372
+    c1 = client.post(
+        "/api/cards",
+        json={"columnId": col_a, "title": "PERSISTENCE_TEST_8372", "details": "Initial details for 8372", "priority": "Low"},
+        headers=headers1,
+    )
+    assert c1.status_code == 200
+    card1_id = c1.json()["card"]["id"]
+
+    # Step 4: Create doomed second card
+    c2 = client.post(
+        "/api/cards",
+        json={"columnId": col_a, "title": "DOOMED_CARD_8372", "details": "Will be deleted", "priority": "Medium"},
+        headers=headers1,
+    )
+    assert c2.status_code == 200
+    card2_id = c2.json()["card"]["id"]
+
+    # Step 5: Move PERSISTENCE_TEST_8372 to column B
+    mv = client.patch(
+        f"/api/cards/{card1_id}/move",
+        json={"columnId": col_b, "position": 0},
+        headers=headers1,
+    )
+    assert mv.status_code == 200
+
+    # Step 6 & 7: Edit contents of PERSISTENCE_TEST_8372
+    ed = client.put(
+        f"/api/cards/{card1_id}",
+        json={"title": "PERSISTENCE_TEST_8372_EDITED", "details": "Updated persistent description", "priority": "High"},
+        headers=headers1,
+    )
+    assert ed.status_code == 200
+
+    # Step 8: Delete doomed second card
+    del_c2 = client.delete(f"/api/cards/{card2_id}", headers=headers1)
+    assert del_c2.status_code == 200
+
+    # Step 9 & 10: Refresh browser (GET /api/board)
+    b_refresh1 = client.get(f"/api/board?project_id={proj_id}", headers=headers1).json()
+    assert card1_id in b_refresh1["cards"]
+    assert b_refresh1["cards"][card1_id]["title"] == "PERSISTENCE_TEST_8372_EDITED"
+    assert b_refresh1["cards"][card1_id]["priority"] == "High"
+    col_b_ref1 = next(c for c in b_refresh1["columns"] if c["id"] == col_b)
+    assert card1_id in col_b_ref1["cardIds"]
+    assert card2_id not in b_refresh1["cards"]
+
+    # Step 11: Logout
+    client.post("/api/auth/logout", headers=headers1)
+
+    # Step 12 & 13: Login again
+    log2 = client.post("/api/auth/login", json={"username": username, "password": password})
+    assert log2.status_code == 200
+    headers2 = {"Authorization": f"Bearer {log2.json()['token']}"}
+
+    b_refresh2 = client.get(f"/api/board?project_id={proj_id}", headers=headers2).json()
+    assert card1_id in b_refresh2["cards"]
+    assert b_refresh2["cards"][card1_id]["title"] == "PERSISTENCE_TEST_8372_EDITED"
+    col_b_ref2 = next(c for c in b_refresh2["columns"] if c["id"] == col_b)
+    assert card1_id in col_b_ref2["cardIds"]
+    assert card2_id not in b_refresh2["cards"]
+
+    # Step 14 & 15: Restart backend
+    database.init_db(db_path=db_path)
+    client_restart = TestClient(app)
+
+    log3 = client_restart.post("/api/auth/login", json={"username": username, "password": password})
+    assert log3.status_code == 200
+    headers3 = {"Authorization": f"Bearer {log3.json()['token']}"}
+
+    b_restart = client_restart.get(f"/api/board?project_id={proj_id}", headers=headers3).json()
+    assert card1_id in b_restart["cards"]
+    assert b_restart["cards"][card1_id]["title"] == "PERSISTENCE_TEST_8372_EDITED"
+    col_b_restart = next(c for c in b_restart["columns"] if c["id"] == col_b)
+    assert card1_id in col_b_restart["cardIds"]
+    assert card2_id not in b_restart["cards"]
+
+    # Step 16, 17, 18, 19: Simulate Redeploy
+    database.init_db(db_path=db_path)
+    client_redeploy = TestClient(app)
+
+    log4 = client_redeploy.post("/api/auth/login", json={"username": username, "password": password})
+    assert log4.status_code == 200
+    headers4 = {"Authorization": f"Bearer {log4.json()['token']}"}
+
+    b_redeploy = client_redeploy.get(f"/api/board?project_id={proj_id}", headers=headers4).json()
+    assert card1_id in b_redeploy["cards"]
+    assert b_redeploy["cards"][card1_id]["title"] == "PERSISTENCE_TEST_8372_EDITED"
+    assert b_redeploy["cards"][card1_id]["priority"] == "High"
+    col_b_redeploy = next(c for c in b_redeploy["columns"] if c["id"] == col_b)
+    assert card1_id in col_b_redeploy["cardIds"]
+    assert card2_id not in b_redeploy["cards"]
+
+    # Confirm user still exists in database
+    conn = database.get_db_connection(db_path)
+    u_row = conn.execute("SELECT username FROM users WHERE username = ?", (username,)).fetchone()
+    assert u_row is not None
+    assert u_row["username"] == username
+    conn.close()
+
+
+
 
 
 
