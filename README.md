@@ -85,7 +85,6 @@ Drag_N_Drop/
     │   ├── database.py                # SQLite schema, hashing, CRUD & RBAC permissions
     │   ├── ai.py                      # AI Assistant rule parser & Gemini integration
     │   ├── websocket_manager.py       # WebSockets broadcasting manager
-    │   ├── pm.db                      # SQLite binary database file
     │   └── requirements.txt           # Python dependencies
     └── frontend/                      # Next.js Frontend Application
         ├── src/
