@@ -8,17 +8,15 @@ TEST_DB_PATH = Path(__file__).resolve().parent / "test_pm.db"
 
 
 @pytest.fixture(autouse=True)
-def setup_test_db():
-    orig_db = database.DB_PATH
-    database.DB_PATH = TEST_DB_PATH
+def setup_test_db(monkeypatch):
     if TEST_DB_PATH.exists():
         try:
             TEST_DB_PATH.unlink()
         except Exception:
             pass
+    monkeypatch.setenv("DATABASE_PATH", str(TEST_DB_PATH))
     database.init_db(TEST_DB_PATH)
     yield
-    database.DB_PATH = orig_db
     if TEST_DB_PATH.exists():
         try:
             TEST_DB_PATH.unlink()
@@ -221,5 +219,5 @@ def test_card_persistence_across_logout_and_login():
 def test_custom_database_path_resolution(monkeypatch, tmp_path):
     custom_db = tmp_path / "custom_dir" / "test_custom.db"
     monkeypatch.setenv("DATABASE_PATH", str(custom_db))
-    resolved = database._resolve_default_db_path()
+    resolved = database.get_database_path()
     assert resolved == custom_db

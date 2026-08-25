@@ -24,7 +24,7 @@ export const getApiUrl = (path: string) => {
     if (window.location.port === "8001" || window.location.port === "8000") {
       return path;
     }
-    return `https://drag-n-drop-28p3.onrender.com${path}`;
+    return `https://drag-n-drop-backend.onrender.com${path}`;
   }
   return path;
 };
@@ -151,7 +151,7 @@ export async function fetchProjects(): Promise<Project[]> {
     return await response.json();
   } catch (error) {
     console.error("Error fetching projects:", error);
-    return [];
+    throw error;
   }
 }
 
@@ -226,7 +226,7 @@ export async function fetchBoard(projectId?: string): Promise<BoardData | null> 
     };
   } catch (error) {
     console.error("Error fetching board:", error);
-    return null;
+    throw error;
   }
 }
 

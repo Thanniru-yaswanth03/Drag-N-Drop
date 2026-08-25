@@ -151,9 +151,8 @@ npx playwright test
 
 ## 🔐 Production Hardening & Security
 - **Authentication Protection**: IP-based rate limiting on `/api/auth/login` and `/api/auth/register` (max 15 attempts/minute).
-- **Persistent Database Engine**: Single dynamic path resolver (`DATABASE_PATH=/data/pm.db` on Render with persistent disk), WAL mode, transactional `PUT /api/board` state synchronization, and atomic query-back registration verification.
+- **Persistent Database Engine**: Production-grade dual-engine persistence layer supporting managed **PostgreSQL** via `DATABASE_URL` (with thread-safe connection pooling via `psycopg-pool`, automatic parameter translation, and non-destructive schema migrations) and local **SQLite** fallback (with WAL mode, Foreign Keys ON, and Busy Timeout).
 - **Zero-Seed Guarantee**: Clean initial database without hardcoded accounts, demo cards, or deleted data resurrection.
-
 - **Runtime Diagnostics**: Safe `/api/health` and `/api/diagnostics/db` endpoints for inspecting production database metrics without secret exposure.
 - **Git & Container Secrets Exclusion**: `.env` and SQLite database files (`*.db`) are strictly excluded via `.gitignore` and `.dockerignore`.
 

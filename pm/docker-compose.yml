@@ -10,7 +10,7 @@ services:
       - "8000:8000"
     environment:
       - ENVIRONMENT=production
-      - SECRET_KEY=drag_n_drop_prod_secret_key_2026
+      - SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY in your .env or environment}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - OPENROUTER_MODEL=${OPENROUTER_MODEL:-openai/gpt-4o-mini}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:8000,http://127.0.0.1:8000}

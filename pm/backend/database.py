@@ -3,43 +3,272 @@ import hmac
 import json
 import logging
 import os
+import re
 import secrets
 import sqlite3
+import urllib.parse
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Sequence
 
 import config
 
 logger = logging.getLogger("drag_n_drop.database")
 
+# Optional psycopg PostgreSQL support
+try:
+    import psycopg
+    from psycopg.rows import dict_row
+    from psycopg_pool import ConnectionPool
+    HAS_PSYCOPG = True
+except ImportError:
+    HAS_PSYCOPG = False
+    psycopg = None
+    dict_row = None
+    ConnectionPool = None
 
-_DEFAULT_DB_PATH = config.get_database_path()
-DB_PATH = _DEFAULT_DB_PATH
+# Global PostgreSQL connection pools keyed by database URL
+_PG_POOLS: Dict[str, Any] = {}
+
+
+def get_pg_pool(database_url: str) -> Any:
+    """Retrieve or initialize a thread-safe psycopg connection pool for PostgreSQL."""
+    if not HAS_PSYCOPG:
+        raise RuntimeError(
+            "psycopg is not installed. Install psycopg[binary] and psycopg-pool for PostgreSQL support."
+        )
+    if database_url not in _PG_POOLS:
+        # Standardize postgres:// to postgresql://
+        url = database_url
+        if url.startswith("postgres://"):
+            url = "postgresql://" + url[len("postgres://"):]
+        logger.info("Initializing PostgreSQL connection pool for %s", mask_database_url(url))
+        _PG_POOLS[database_url] = ConnectionPool(
+            conninfo=url,
+            min_size=1,
+            max_size=10,
+            timeout=30.0,
+            open=True,
+            kwargs={"row_factory": dict_row, "autocommit": False},
+        )
+    return _PG_POOLS[database_url]
+
+
+def mask_database_url(url: str) -> str:
+    """Mask password credentials in database URL for safe logging/diagnostics."""
+    if not url:
+        return ""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.password:
+            netloc = f"{parsed.username or ''}:***@{parsed.hostname or ''}"
+            if parsed.port:
+                netloc += f":{parsed.port}"
+            return urllib.parse.urlunparse(parsed._replace(netloc=netloc))
+        return url
+    except Exception:
+        return "masked-database-url"
+
+
+def is_postgres_target(db_target: Optional[Union[str, Path]] = None) -> bool:
+    """Determine whether the specified or configured database target is PostgreSQL."""
+    if db_target is not None:
+        target_str = str(db_target).strip()
+        if target_str.startswith("postgresql://") or target_str.startswith("postgres://"):
+            return True
+        return False
+    
+    url = config.get_database_url()
+    return url.startswith("postgresql://") or url.startswith("postgres://")
 
 
 def get_database_path(db_path: Optional[Union[str, Path]] = None) -> Path:
-    """Resolve the authoritative SQLite database path."""
-    if db_path is not None:
+    """Resolve the authoritative SQLite database path.
+    
+    If an explicit db_path is provided (e.g. by tests), use it.
+    Otherwise delegate to config.get_database_path() which checks
+    DATABASE_PATH env var → /data mount → local fallback.
+    """
+    if db_path is not None and not is_postgres_target(db_path):
         return Path(db_path).resolve()
-    # 1. Explicit environment variable always takes top precedence
-    env_path = os.getenv("DATABASE_PATH", "").strip()
-    if env_path:
-        return Path(env_path).resolve()
-    # 2. Check if DB_PATH was explicitly overridden/monkeypatched on this module
-    current_val = globals().get("DB_PATH")
-    if current_val is not None and current_val is not _DEFAULT_DB_PATH:
-        return Path(current_val).resolve()
-    # 3. Fall back to config resolution
     return config.get_database_path()
 
 
-# Backward compatibility alias
-_resolve_default_db_path = get_database_path
+class DBCursor:
+    """Unified cursor adapter abstracting SQLite and PostgreSQL."""
+
+    def __init__(self, raw_cursor: Any, is_postgres: bool):
+        self._cursor = raw_cursor
+        self._is_postgres = is_postgres
+
+    def _translate_query(self, query: str) -> str:
+        if not self._is_postgres:
+            return query
+        # Replace ? parameter placeholders with %s for psycopg
+        # SQLite uses ? while PostgreSQL psycopg uses %s
+        return query.replace("?", "%s")
+
+    def execute(self, query: str, params: Optional[Union[Sequence[Any], Dict[str, Any]]] = None) -> "DBCursor":
+        translated = self._translate_query(query)
+        if params is not None:
+            # If params is a single dict or sequence
+            if self._is_postgres and isinstance(params, (list, tuple)):
+                # Convert any json structures if necessary
+                processed_params = []
+                for p in params:
+                    processed_params.append(p)
+                self._cursor.execute(translated, tuple(processed_params))
+            else:
+                self._cursor.execute(translated, params)
+        else:
+            self._cursor.execute(translated)
+        return self
+
+    def executescript(self, script: str) -> "DBCursor":
+        if not self._is_postgres:
+            self._cursor.executescript(script)
+            return self
+
+        # PostgreSQL: split into individual statements and execute
+        # Remove SQL comments and empty statements
+        cleaned = re.sub(r"--.*$", "", script, flags=re.MULTILINE)
+        statements = [stmt.strip() for stmt in cleaned.split(";") if stmt.strip()]
+        for stmt in statements:
+            self._cursor.execute(stmt)
+        return self
+
+    def fetchone(self) -> Optional[Dict[str, Any]]:
+        row = self._cursor.fetchone()
+        if row is None:
+            return None
+        if isinstance(row, dict):
+            return row
+        if hasattr(row, "keys"):
+            # sqlite3.Row or similar dict-like mapping
+            return {k: row[k] for k in row.keys()}
+        if isinstance(row, (tuple, list)):
+            return dict(enumerate(row))
+        return row
+
+    def fetchall(self) -> List[Dict[str, Any]]:
+        rows = self._cursor.fetchall()
+        if not rows:
+            return []
+        res = []
+        for r in rows:
+            if isinstance(r, dict):
+                res.append(r)
+            elif hasattr(r, "keys"):
+                res.append({k: r[k] for k in r.keys()})
+            else:
+                res.append(r)
+        return res
+
+    @property
+    def rowcount(self) -> int:
+        return getattr(self._cursor, "rowcount", -1)
+
+    def close(self):
+        try:
+            self._cursor.close()
+        except Exception:
+            pass
 
 
+class DBConnection:
+    """Unified database connection wrapper providing transactional execution for SQLite & PostgreSQL."""
 
+    def __init__(self, raw_conn: Any, is_postgres: bool, pool_conn: bool = False, pool: Any = None):
+        self._conn = raw_conn
+        self._is_postgres = is_postgres
+        self._pool_conn = pool_conn
+        self._pool = pool
+        self._closed = False
+
+    @property
+    def is_postgres(self) -> bool:
+        return self._is_postgres
+
+    def cursor(self) -> DBCursor:
+        raw_cur = self._conn.cursor()
+        return DBCursor(raw_cur, self._is_postgres)
+
+    def commit(self):
+        if self._conn and not self._closed:
+            self._conn.commit()
+
+    def rollback(self):
+        if self._conn and not self._closed:
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
+
+    def close(self):
+        if self._closed:
+            return
+        self._closed = True
+        if self._pool and self._pool_conn:
+            try:
+                self._pool.putconn(self._conn)
+            except Exception:
+                pass
+        else:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            self.rollback()
+        else:
+            self.commit()
+        self.close()
+
+
+def get_db_connection(db_target: Optional[Union[str, Path]] = None) -> DBConnection:
+    """Obtain an authoritative database connection for PostgreSQL or SQLite."""
+    if is_postgres_target(db_target):
+        url = str(db_target).strip() if db_target is not None else config.get_database_url()
+        if url.startswith("postgres://"):
+            url = "postgresql://" + url[len("postgres://"):]
+
+        if not HAS_PSYCOPG:
+            raise RuntimeError(
+                "psycopg is required to connect to PostgreSQL. Run: pip install psycopg[binary] psycopg-pool"
+            )
+
+        try:
+            # Use connection pool for high concurrency and reuse
+            pool = get_pg_pool(url)
+            raw_conn = pool.getconn()
+            return DBConnection(raw_conn, is_postgres=True, pool_conn=True, pool=pool)
+        except Exception as e:
+            logger.warning("Connection pool failed (%s), falling back to direct psycopg.connect", e)
+            raw_conn = psycopg.connect(url, row_factory=dict_row, autocommit=False)
+            return DBConnection(raw_conn, is_postgres=True, pool_conn=False)
+
+    # SQLite connection
+    target_path = get_database_path(db_target)
+    try:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        logger.error("Failed to ensure SQLite database directory %s exists: %s", target_path.parent, e)
+
+    sqlite_conn = sqlite3.connect(str(target_path), timeout=30.0)
+    try:
+        sqlite_conn.execute("PRAGMA foreign_keys = ON")
+        sqlite_conn.execute("PRAGMA journal_mode = WAL")
+        sqlite_conn.execute("PRAGMA busy_timeout = 5000")
+    except Exception as e:
+        logger.warning("Could not set SQLite PRAGMAs on %s: %s", target_path, e)
+    sqlite_conn.row_factory = sqlite3.Row
+    return DBConnection(sqlite_conn, is_postgres=False)
 
 
 def hash_password(password: str, salt: str) -> str:
@@ -61,83 +290,88 @@ def verify_password(password: str, password_hash: str, salt: str) -> bool:
     return hmac.compare_digest(computed_hash, password_hash)
 
 
-def get_db_connection(db_path: Optional[Union[str, Path]] = None) -> sqlite3.Connection:
-    """Obtain an authoritative SQLite database connection with Foreign Keys and WAL mode enabled."""
-    target_path = get_database_path(db_path)
-    try:
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-    except Exception as e:
-        logger.error("Failed to ensure database directory %s exists: %s", target_path.parent, e)
-
-    conn = sqlite3.connect(str(target_path), timeout=30.0)
-    try:
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("PRAGMA journal_mode = WAL")
-        conn.execute("PRAGMA busy_timeout = 5000")
-    except Exception as e:
-        logger.warning("Could not set SQLite PRAGMAs on %s: %s", target_path, e)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def get_database_diagnostics(db_path: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
+def get_database_diagnostics(db_target: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
     """Report safe runtime database diagnostic metrics without exposing secrets."""
-    target_path = get_database_path(db_path)
-    file_exists = target_path.is_file()
-    file_size = target_path.stat().st_size if file_exists else 0
-    parent_dir = target_path.parent
-    parent_exists = parent_dir.exists()
-    parent_writable = os.access(str(parent_dir), os.W_OK) if parent_exists else False
-    is_persistent = str(target_path).startswith("/data") or str(parent_dir).startswith("/data")
+    is_pg = is_postgres_target(db_target)
+    
+    if is_pg:
+        raw_url = str(db_target).strip() if db_target is not None else config.get_database_url()
+        masked_url = mask_database_url(raw_url)
+        engine = "postgresql"
+        resolved_target = masked_url
+        is_persistent = True
+        journal_mode = "native-wal"
+        foreign_keys = True
+        file_exists = True
+        file_size = 0
+        parent_dir = "n/a (managed cloud database)"
+        parent_exists = True
+        parent_writable = True
+    else:
+        target_path = get_database_path(db_target)
+        file_exists = target_path.is_file()
+        file_size = target_path.stat().st_size if file_exists else 0
+        parent_dir = str(target_path.parent)
+        parent_exists = target_path.parent.exists()
+        parent_writable = os.access(str(target_path.parent), os.W_OK) if parent_exists else False
+        is_persistent = str(target_path).startswith("/data") or str(parent_dir).startswith("/data")
+        engine = "sqlite"
+        resolved_target = str(target_path)
+        journal_mode = "unknown"
+        foreign_keys = False
 
-    journal_mode = "unknown"
-    foreign_keys = 0
     user_count = 0
     board_count = 0
     card_count = 0
     session_count = 0
 
     try:
-        conn = get_db_connection(db_path)
+        conn = get_db_connection(db_target)
         cursor = conn.cursor()
-        
-        try:
-            cursor.execute("PRAGMA journal_mode")
-            row = cursor.fetchone()
-            if row:
-                journal_mode = str(row[0])
-        except Exception as e:
-            logger.warning("Could not read PRAGMA journal_mode: %s", e)
 
-        try:
-            cursor.execute("PRAGMA foreign_keys")
-            row = cursor.fetchone()
-            if row:
-                foreign_keys = int(row[0])
-        except Exception as e:
-            logger.warning("Could not read PRAGMA foreign_keys: %s", e)
+        if not is_pg:
+            try:
+                cursor.execute("PRAGMA journal_mode")
+                row = cursor.fetchone()
+                if row:
+                    journal_mode = str(list(row.values())[0] if isinstance(row, dict) else row[0])
+            except Exception as e:
+                logger.warning("Could not read PRAGMA journal_mode: %s", e)
+
+            try:
+                cursor.execute("PRAGMA foreign_keys")
+                row = cursor.fetchone()
+                if row:
+                    val = list(row.values())[0] if isinstance(row, dict) else row[0]
+                    foreign_keys = bool(int(val))
+            except Exception as e:
+                logger.warning("Could not read PRAGMA foreign_keys: %s", e)
 
         try:
             cursor.execute("SELECT COUNT(*) as count FROM users")
-            user_count = int(cursor.fetchone()["count"])
+            row = cursor.fetchone()
+            user_count = int(row["count"]) if row else 0
         except Exception as e:
             logger.warning("Could not count users: %s", e)
 
         try:
             cursor.execute("SELECT COUNT(*) as count FROM boards")
-            board_count = int(cursor.fetchone()["count"])
+            row = cursor.fetchone()
+            board_count = int(row["count"]) if row else 0
         except Exception as e:
             logger.warning("Could not count boards: %s", e)
 
         try:
             cursor.execute("SELECT COUNT(*) as count FROM cards")
-            card_count = int(cursor.fetchone()["count"])
+            row = cursor.fetchone()
+            card_count = int(row["count"]) if row else 0
         except Exception as e:
             logger.warning("Could not count cards: %s", e)
 
         try:
             cursor.execute("SELECT COUNT(*) as count FROM sessions")
-            session_count = int(cursor.fetchone()["count"])
+            row = cursor.fetchone()
+            session_count = int(row["count"]) if row else 0
         except Exception as e:
             logger.warning("Could not count sessions: %s", e)
 
@@ -145,18 +379,19 @@ def get_database_diagnostics(db_path: Optional[Union[str, Path]] = None) -> Dict
     except Exception as e:
         logger.error("Error collecting database diagnostics: %s", e)
 
-
     return {
-        "configuredPath": config.DATABASE_PATH or None,
-        "resolvedPath": str(target_path),
+        "engine": engine,
+        "configuredUrl": mask_database_url(os.getenv("DATABASE_URL", "").strip()) or None,
+        "configuredPath": os.getenv("DATABASE_PATH", "").strip() or None,
+        "resolvedPath": resolved_target,
         "fileExists": file_exists,
         "fileSizeBytes": file_size,
-        "parentDirectory": str(parent_dir),
+        "parentDirectory": parent_dir,
         "parentExists": parent_exists,
         "parentWritable": parent_writable,
         "isPersistentMount": is_persistent,
         "journalMode": journal_mode,
-        "foreignKeysEnabled": bool(foreign_keys),
+        "foreignKeysEnabled": foreign_keys,
         "userCount": user_count,
         "boardCount": board_count,
         "cardCount": card_count,
@@ -164,15 +399,18 @@ def get_database_diagnostics(db_path: Optional[Union[str, Path]] = None) -> Dict
     }
 
 
-
-def init_db(db_path: Path = None):
-    """Initialize database schema, indexes, and migrations ONLY.
+def init_db(db_target: Optional[Union[str, Path]] = None):
+    """Initialize database schema, indexes, and safe migrations ONLY.
+    Works seamlessly and idempotently across PostgreSQL and SQLite.
     Never auto-seeds demo/default users or recreates deleted data on production startup.
     """
-    conn = get_db_connection(db_path)
+    conn = get_db_connection(db_target)
     cursor = conn.cursor()
 
-    cursor.executescript(
+    is_pg = conn.is_postgres
+
+    # 1. Base DDL statements (Standard ANSI SQL valid in both SQLite and PostgreSQL)
+    ddl_statements = [
         """
         CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
@@ -180,8 +418,9 @@ def init_db(db_path: Path = None):
             password_hash TEXT NOT NULL,
             password_salt TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS boards (
             id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,
@@ -189,8 +428,9 @@ def init_db(db_path: Path = None):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS columns (
             id TEXT PRIMARY KEY,
             board_id TEXT NOT NULL,
@@ -198,8 +438,9 @@ def init_db(db_path: Path = None):
             position INTEGER NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (board_id) REFERENCES boards(id) ON DELETE CASCADE
-        );
-
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS cards (
             id TEXT PRIMARY KEY,
             column_id TEXT NOT NULL,
@@ -214,12 +455,9 @@ def init_db(db_path: Path = None):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (column_id) REFERENCES columns(id) ON DELETE CASCADE
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_boards_user_id ON boards(user_id);
-        CREATE INDEX IF NOT EXISTS idx_columns_board_id ON columns(board_id);
-        CREATE INDEX IF NOT EXISTS idx_cards_column_id ON cards(column_id);
-
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS activity_log (
             id TEXT PRIMARY KEY,
             project_id TEXT NOT NULL,
@@ -231,10 +469,9 @@ def init_db(db_path: Path = None):
             details TEXT DEFAULT '{}',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (project_id) REFERENCES boards(id) ON DELETE CASCADE
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_activity_log_project_id ON activity_log(project_id);
-
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS project_members (
             id TEXT PRIMARY KEY,
             project_id TEXT NOT NULL,
@@ -243,10 +480,9 @@ def init_db(db_path: Path = None):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (project_id) REFERENCES boards(id) ON DELETE CASCADE,
             UNIQUE(project_id, user_id)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_project_members_project_id ON project_members(project_id);
-
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS notifications (
             id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,
@@ -256,8 +492,9 @@ def init_db(db_path: Path = None):
             message TEXT NOT NULL,
             is_read INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS sessions (
             token TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,
@@ -265,45 +502,74 @@ def init_db(db_path: Path = None):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             expires_at TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
+        )
+        """,
+        # Indexes
+        "CREATE INDEX IF NOT EXISTS idx_boards_user_id ON boards(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_columns_board_id ON columns(board_id)",
+        "CREATE INDEX IF NOT EXISTS idx_cards_column_id ON cards(column_id)",
+        "CREATE INDEX IF NOT EXISTS idx_activity_log_project_id ON activity_log(project_id)",
+        "CREATE INDEX IF NOT EXISTS idx_project_members_project_id ON project_members(project_id)",
+        "CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_activity_log_project_created ON activity_log(project_id, created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read, created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_project_members_user_project ON project_members(user_id, project_id)",
+        "CREATE INDEX IF NOT EXISTS idx_cards_due_date ON cards(due_date)",
+        "CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token)",
+        "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)",
+    ]
 
-        CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
-        CREATE INDEX IF NOT EXISTS idx_activity_log_project_created ON activity_log(project_id, created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read, created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_project_members_user_project ON project_members(user_id, project_id);
-        CREATE INDEX IF NOT EXISTS idx_cards_due_date ON cards(due_date);
-        CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
-        CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
-        """
-    )
+    for stmt in ddl_statements:
+        cursor.execute(stmt.strip())
 
-    # Safe migrations for existing schemas
-    cursor.execute("PRAGMA table_info(sessions)")
-    sess_cols = {row["name"] for row in cursor.fetchall()}
-    if "expires_at" not in sess_cols:
-        cursor.execute("ALTER TABLE sessions ADD COLUMN expires_at TIMESTAMP")
+    # 2. Safe Column Migrations for existing schemas
+    if is_pg:
+        # PostgreSQL supports ADD COLUMN IF NOT EXISTS natively
+        pg_migrations = [
+            "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP",
+            "ALTER TABLE cards ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''",
+            "ALTER TABLE cards ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'medium'",
+            "ALTER TABLE cards ADD COLUMN IF NOT EXISTS due_date TEXT DEFAULT NULL",
+            "ALTER TABLE cards ADD COLUMN IF NOT EXISTS tags TEXT DEFAULT '[]'",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_salt TEXT NOT NULL DEFAULT 'legacy'",
+        ]
+        for mig in pg_migrations:
+            try:
+                cursor.execute(mig)
+            except Exception as e:
+                logger.warning("PostgreSQL migration notice (%s): %s", mig, e)
+    else:
+        # SQLite schema inspection
+        try:
+            cursor.execute("PRAGMA table_info(sessions)")
+            sess_cols = {row["name"] for row in cursor.fetchall()}
+            if "expires_at" not in sess_cols:
+                cursor.execute("ALTER TABLE sessions ADD COLUMN expires_at TIMESTAMP")
 
-    cursor.execute("PRAGMA table_info(cards)")
-    card_cols = {row["name"] for row in cursor.fetchall()}
-    if "description" not in card_cols:
-        cursor.execute("ALTER TABLE cards ADD COLUMN description TEXT DEFAULT ''")
-    if "priority" not in card_cols:
-        cursor.execute("ALTER TABLE cards ADD COLUMN priority TEXT DEFAULT 'medium'")
-    if "due_date" not in card_cols:
-        cursor.execute("ALTER TABLE cards ADD COLUMN due_date TEXT DEFAULT NULL")
-    if "tags" not in card_cols:
-        cursor.execute("ALTER TABLE cards ADD COLUMN tags TEXT DEFAULT '[]'")
+            cursor.execute("PRAGMA table_info(cards)")
+            card_cols = {row["name"] for row in cursor.fetchall()}
+            if "description" not in card_cols:
+                cursor.execute("ALTER TABLE cards ADD COLUMN description TEXT DEFAULT ''")
+            if "priority" not in card_cols:
+                cursor.execute("ALTER TABLE cards ADD COLUMN priority TEXT DEFAULT 'medium'")
+            if "due_date" not in card_cols:
+                cursor.execute("ALTER TABLE cards ADD COLUMN due_date TEXT DEFAULT NULL")
+            if "tags" not in card_cols:
+                cursor.execute("ALTER TABLE cards ADD COLUMN tags TEXT DEFAULT '[]'")
 
-    cursor.execute("PRAGMA table_info(users)")
-    user_cols = {row["name"] for row in cursor.fetchall()}
-    if "password_salt" not in user_cols:
-        cursor.execute("ALTER TABLE users ADD COLUMN password_salt TEXT NOT NULL DEFAULT 'legacy'")
+            cursor.execute("PRAGMA table_info(users)")
+            user_cols = {row["name"] for row in cursor.fetchall()}
+            if "password_salt" not in user_cols:
+                cursor.execute("ALTER TABLE users ADD COLUMN password_salt TEXT NOT NULL DEFAULT 'legacy'")
+        except Exception as e:
+            logger.warning("SQLite migration check notice: %s", e)
 
     conn.commit()
     conn.close()
+    logger.info("Database initialized successfully (engine=%s)", "postgresql" if is_pg else "sqlite")
 
 
-def create_session(username: str, db_path: Path = None, duration_days: int = 7) -> dict:
+def create_session(username: str, db_path: Optional[Union[str, Path]] = None, duration_days: int = 7) -> dict:
     """Create a new session for an existing user with an expiration timestamp."""
     username_clean = username.strip().lower()
     conn = get_db_connection(db_path)
@@ -336,7 +602,7 @@ def create_session(username: str, db_path: Path = None, duration_days: int = 7) 
     }
 
 
-def verify_session_token(token: str, db_path: Path = None) -> Optional[dict]:
+def verify_session_token(token: str, db_path: Optional[Union[str, Path]] = None) -> Optional[dict]:
     """Verify a session token against the database, enforcing expiration."""
     if not token or not isinstance(token, str):
         return None
@@ -358,7 +624,7 @@ def verify_session_token(token: str, db_path: Path = None) -> Optional[dict]:
     expires_at = row["expires_at"]
     if expires_at:
         try:
-            exp_dt = datetime.fromisoformat(expires_at)
+            exp_dt = datetime.fromisoformat(str(expires_at))
             if exp_dt.tzinfo is None:
                 exp_dt = exp_dt.replace(tzinfo=timezone.utc)
             if datetime.now(timezone.utc) > exp_dt:
@@ -373,7 +639,7 @@ def verify_session_token(token: str, db_path: Path = None) -> Optional[dict]:
     return {"userId": row["user_id"], "username": row["username"]}
 
 
-def revoke_session(token: str, db_path: Path = None) -> bool:
+def revoke_session(token: str, db_path: Optional[Union[str, Path]] = None) -> bool:
     """Revoke/delete an active session."""
     if not token:
         return False
@@ -393,7 +659,6 @@ def register_user(username: str, password: str, db_path: Optional[Union[str, Pat
     if not username_clean or len(password) < 4:
         return {"success": False, "error": "Username must be non-empty and password at least 4 characters."}
 
-    resolved_path = get_database_path(db_path)
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
 
@@ -420,11 +685,11 @@ def register_user(username: str, password: str, db_path: Optional[Union[str, Pat
         if not verified or verified["username"].lower() != username_clean:
             conn.rollback()
             conn.close()
-            logger.error("REGISTER_FAILED verification query failed for user=%s db=%s", username_clean, str(resolved_path))
+            logger.error("REGISTER_FAILED verification query failed for user=%s", username_clean)
             return {"success": False, "error": "Failed to persist user credentials to database."}
 
         conn.close()
-        logger.info("REGISTER user=%s db=%s committed=true", username_clean, str(resolved_path))
+        logger.info("REGISTER user=%s committed=true", username_clean)
 
         # Create initial starter project once for the newly verified user
         create_project(username_clean, name="Main Project", db_path=db_path)
@@ -437,14 +702,13 @@ def register_user(username: str, password: str, db_path: Optional[Union[str, Pat
             conn.close()
         except Exception:
             pass
-        logger.error("REGISTER_ERROR user=%s db=%s error=%s", username_clean, str(resolved_path), e)
+        logger.error("REGISTER_ERROR user=%s error=%s", username_clean, e)
         return {"success": False, "error": f"Registration failed: {str(e)}"}
 
 
 def authenticate_user(username: str, password: str, db_path: Optional[Union[str, Path]] = None) -> Optional[dict]:
     """Authenticate a user using constant-time password hash verification against the authoritative database."""
     username_clean = username.strip().lower()
-    resolved_path = get_database_path(db_path)
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
 
@@ -457,32 +721,31 @@ def authenticate_user(username: str, password: str, db_path: Optional[Union[str,
         conn.close()
 
         if not row:
-            logger.warning("LOGIN_FAILED user=%s db=%s reason=user_not_found", username_clean, str(resolved_path))
+            logger.warning("LOGIN_FAILED user=%s reason=user_not_found", username_clean)
             return None
 
         salt = row["password_salt"] or "legacy"
         if verify_password(password, row["password_hash"], salt):
-            logger.info("LOGIN_SUCCESS user=%s db=%s", username_clean, str(resolved_path))
+            logger.info("LOGIN_SUCCESS user=%s", username_clean)
             return create_session(row["username"], db_path=db_path)
 
         # Legacy backward compatibility check with old static salt if migrating
         if salt == "legacy" and verify_password(password, row["password_hash"], "drag_n_drop_salt"):
-            logger.info("LOGIN_SUCCESS_LEGACY user=%s db=%s", username_clean, str(resolved_path))
+            logger.info("LOGIN_SUCCESS_LEGACY user=%s", username_clean)
             return create_session(row["username"], db_path=db_path)
 
-        logger.warning("LOGIN_FAILED user=%s db=%s reason=invalid_password", username_clean, str(resolved_path))
+        logger.warning("LOGIN_FAILED user=%s reason=invalid_password", username_clean)
         return None
     except Exception as e:
         try:
             conn.close()
         except Exception:
             pass
-        logger.error("LOGIN_ERROR user=%s db=%s error=%s", username_clean, str(resolved_path), e)
+        logger.error("LOGIN_ERROR user=%s error=%s", username_clean, e)
         return None
 
 
-
-def get_projects(user_id: str, db_path: Path = None) -> List[Dict[str, Any]]:
+def get_projects(user_id: str, db_path: Optional[Union[str, Path]] = None) -> List[Dict[str, Any]]:
     """Retrieve all projects accessible to the authenticated user.
     Never resurrects a deleted project if the list is empty.
     """
@@ -514,14 +777,14 @@ def get_projects(user_id: str, db_path: Path = None) -> List[Dict[str, Any]]:
         {
             "id": row["id"],
             "name": row["name"],
-            "createdAt": str(row["created_at"]) if row["created_at"] else None,
-            "updatedAt": str(row["updated_at"]) if row["updated_at"] else None,
+            "createdAt": str(row["created_at"]) if row.get("created_at") is not None else None,
+            "updatedAt": str(row["updated_at"]) if row.get("updated_at") is not None else None,
         }
         for row in rows
     ]
 
 
-def create_project(user_id: str, name: str = "New Project", db_path: Path = None) -> Dict[str, Any]:
+def create_project(user_id: str, name: str = "New Project", db_path: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
     """Create a new project and its 5 initial columns in an atomic transaction."""
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
@@ -571,12 +834,12 @@ def create_project(user_id: str, name: str = "New Project", db_path: Path = None
     return {
         "id": row["id"],
         "name": row["name"],
-        "createdAt": str(row["created_at"]) if row["created_at"] else None,
-        "updatedAt": str(row["updated_at"]) if row["updated_at"] else None,
+        "createdAt": str(row["created_at"]) if row.get("created_at") is not None else None,
+        "updatedAt": str(row["updated_at"]) if row.get("updated_at") is not None else None,
     }
 
 
-def update_project(user_id: str, project_id: str, name: str, db_path: Path = None) -> Optional[Dict[str, Any]]:
+def update_project(user_id: str, project_id: str, name: str, db_path: Optional[Union[str, Path]] = None) -> Optional[Dict[str, Any]]:
     """Rename a project, verifying user admin/owner permissions."""
     if not check_user_permission(project_id, user_id, "admin", db_path=db_path):
         return None
@@ -602,12 +865,12 @@ def update_project(user_id: str, project_id: str, name: str, db_path: Path = Non
     return {
         "id": row["id"],
         "name": row["name"],
-        "createdAt": str(row["created_at"]) if row["created_at"] else None,
-        "updatedAt": str(row["updated_at"]) if row["updated_at"] else None,
+        "createdAt": str(row["created_at"]) if row.get("created_at") is not None else None,
+        "updatedAt": str(row["updated_at"]) if row.get("updated_at") is not None else None,
     }
 
 
-def delete_project(user_id: str, project_id: str, db_path: Path = None) -> bool:
+def delete_project(user_id: str, project_id: str, db_path: Optional[Union[str, Path]] = None) -> bool:
     """Delete a project and cascade delete all dependent data in an atomic transaction."""
     if not check_user_permission(project_id, user_id, "owner", db_path=db_path):
         return False
@@ -629,7 +892,7 @@ def delete_project(user_id: str, project_id: str, db_path: Path = None) -> bool:
     return True
 
 
-def get_board(user_id: str, db_path: Path = None, project_id: str = None) -> Optional[Dict[str, Any]]:
+def get_board(user_id: str, db_path: Optional[Union[str, Path]] = None, project_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Fetch authoritative board state (columns and cards) from the database."""
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
@@ -694,26 +957,26 @@ def get_board(user_id: str, db_path: Path = None, project_id: str = None) -> Opt
             card_id = card["id"]
             card_ids.append(card_id)
             tags_list = []
-            if card["tags"]:
+            if card.get("tags"):
                 try:
                     tags_list = json.loads(card["tags"]) if isinstance(card["tags"], str) else card["tags"]
                 except Exception:
                     tags_list = []
 
-            det = card["details"] or card["description"] or ""
-            desc = card["description"] or card["details"] or ""
+            det = card.get("details") or card.get("description") or ""
+            desc = card.get("description") or card.get("details") or ""
 
             cards_map[card_id] = {
                 "id": card_id,
                 "title": card["title"],
                 "details": det,
                 "description": desc,
-                "priority": card["priority"] or "medium",
-                "dueDate": card["due_date"],
+                "priority": card.get("priority") or "medium",
+                "dueDate": card.get("due_date"),
                 "tags": tags_list if isinstance(tags_list, list) else [],
-                "assignee": card["assignee"],
-                "createdAt": str(card["created_at"]) if card["created_at"] else None,
-                "updatedAt": str(card["updated_at"]) if card["updated_at"] else None,
+                "assignee": card.get("assignee"),
+                "createdAt": str(card["created_at"]) if card.get("created_at") is not None else None,
+                "updatedAt": str(card["updated_at"]) if card.get("updated_at") is not None else None,
             }
         columns.append(
             {
@@ -732,15 +995,8 @@ def get_board(user_id: str, db_path: Path = None, project_id: str = None) -> Opt
     }
 
 
-def save_board(user_id: str, project_id: str, board_data: dict, db_path: Path = None) -> Optional[Dict[str, Any]]:
-    """Atomically and transactionally replace/update the full board state for a project in SQLite.
-    
-    1. Validates authenticated user permissions on project
-    2. Synchronizes columns: updates existing, inserts new, deletes removed
-    3. Synchronizes cards: updates existing, inserts new, deletes removed, preserves exact positions and column mappings
-    4. Runs atomically in a single SQLite transaction with rollback on failure
-    5. Returns the authoritative saved database board state
-    """
+def save_board(user_id: str, project_id: str, board_data: dict, db_path: Optional[Union[str, Path]] = None) -> Optional[Dict[str, Any]]:
+    """Atomically and transactionally replace/update the full board state for a project."""
     if not check_user_permission(project_id, user_id, "member", db_path=db_path):
         return {"error": "Forbidden: insufficient permissions to update board"}
 
@@ -881,7 +1137,6 @@ def save_board(user_id: str, project_id: str, board_data: dict, db_path: Path = 
 
 
 def add_card(
-
     user_id: str,
     column_id: str,
     card_id: str,
@@ -892,7 +1147,7 @@ def add_card(
     due_date: str = None,
     tags: list = None,
     assignee: str = None,
-    db_path: Path = None,
+    db_path: Optional[Union[str, Path]] = None,
 ):
     """Add a card to a column, verifying member permissions on the project."""
     conn = get_db_connection(db_path)
@@ -914,7 +1169,8 @@ def add_card(
     cursor = conn.cursor()
 
     cursor.execute("SELECT COUNT(*) as count FROM cards WHERE column_id = ?", (column_id,))
-    count = cursor.fetchone()["count"]
+    count_row = cursor.fetchone()
+    count = count_row["count"] if count_row else 0
 
     det = details or description or ""
     desc = description or details or ""
@@ -945,12 +1201,12 @@ def add_card(
         "dueDate": due_date,
         "tags": tags_list,
         "assignee": assignee,
-        "createdAt": str(row["created_at"]) if row else None,
-        "updatedAt": str(row["updated_at"]) if row else None,
+        "createdAt": str(row["created_at"]) if row and row.get("created_at") is not None else None,
+        "updatedAt": str(row["updated_at"]) if row and row.get("updated_at") is not None else None,
     }
 
 
-def update_card(card_id: str, updates: dict, user_id: str, db_path: Path = None):
+def update_card(card_id: str, updates: dict, user_id: str, db_path: Optional[Union[str, Path]] = None):
     """Update card attributes atomically, verifying tenant permissions."""
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
@@ -1016,7 +1272,7 @@ def update_card(card_id: str, updates: dict, user_id: str, db_path: Path = None)
         return None
 
     tags_list = []
-    if updated_row["tags"]:
+    if updated_row.get("tags"):
         try:
             tags_list = json.loads(updated_row["tags"]) if isinstance(updated_row["tags"], str) else updated_row["tags"]
         except Exception:
@@ -1028,18 +1284,18 @@ def update_card(card_id: str, updates: dict, user_id: str, db_path: Path = None)
     return {
         "id": updated_row["id"],
         "title": updated_row["title"],
-        "details": updated_row["details"] or updated_row["description"] or "",
-        "description": updated_row["description"] or updated_row["details"] or "",
-        "priority": updated_row["priority"] or "medium",
-        "dueDate": updated_row["due_date"],
+        "details": updated_row.get("details") or updated_row.get("description") or "",
+        "description": updated_row.get("description") or updated_row.get("details") or "",
+        "priority": updated_row.get("priority") or "medium",
+        "dueDate": updated_row.get("due_date"),
         "tags": tags_list if isinstance(tags_list, list) else [],
-        "assignee": updated_row["assignee"],
-        "createdAt": str(updated_row["created_at"]) if updated_row["created_at"] else None,
-        "updatedAt": str(updated_row["updated_at"]) if updated_row["updated_at"] else None,
+        "assignee": updated_row.get("assignee"),
+        "createdAt": str(updated_row["created_at"]) if updated_row.get("created_at") is not None else None,
+        "updatedAt": str(updated_row["updated_at"]) if updated_row.get("updated_at") is not None else None,
     }
 
 
-def delete_card(card_id: str, user_id: str, db_path: Path = None):
+def delete_card(card_id: str, user_id: str, db_path: Optional[Union[str, Path]] = None):
     """Permanently delete a card from the database and verify deletion."""
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
@@ -1074,7 +1330,7 @@ def delete_card(card_id: str, user_id: str, db_path: Path = None):
     return True
 
 
-def move_card(card_id: str, destination_column_id: str, position: int = 0, user_id: str = "user", db_path: Path = None):
+def move_card(card_id: str, destination_column_id: str, position: int = 0, user_id: str = "user", db_path: Optional[Union[str, Path]] = None):
     """Move a card to a destination column at a specific position atomically."""
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
@@ -1121,7 +1377,7 @@ def move_card(card_id: str, destination_column_id: str, position: int = 0, user_
     return get_board(user_id, db_path, project_id=project_id)
 
 
-def update_column(column_id: str, title: str, user_id: str, db_path: Path = None):
+def update_column(column_id: str, title: str, user_id: str, db_path: Optional[Union[str, Path]] = None):
     """Rename a column in a project."""
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
@@ -1147,7 +1403,7 @@ def update_column(column_id: str, title: str, user_id: str, db_path: Path = None
     return {"id": column_id, "title": title}
 
 
-def clear_column_cards(column_id: str, user_id: str, db_path: Path = None):
+def clear_column_cards(column_id: str, user_id: str, db_path: Optional[Union[str, Path]] = None):
     """Delete all cards within a column permanently."""
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
@@ -1182,7 +1438,7 @@ ROLE_HIERARCHY = {
 }
 
 
-def get_user_role(project_id: str, username: str, db_path: Path = None) -> str:
+def get_user_role(project_id: str, username: str, db_path: Optional[Union[str, Path]] = None) -> str:
     """Determine the user's role on a specific project strictly from the database."""
     if not project_id or not username:
         return "none"
@@ -1220,7 +1476,7 @@ def get_user_role(project_id: str, username: str, db_path: Path = None) -> str:
     return "none"
 
 
-def check_user_permission(project_id: str, username: str, required_role: str = "viewer", db_path: Path = None) -> bool:
+def check_user_permission(project_id: str, username: str, required_role: str = "viewer", db_path: Optional[Union[str, Path]] = None) -> bool:
     """Verify if the user meets the minimum required role for a project."""
     user_role = get_user_role(project_id, username, db_path=db_path)
     user_level = ROLE_HIERARCHY.get(user_role, 0)
@@ -1228,7 +1484,7 @@ def check_user_permission(project_id: str, username: str, required_role: str = "
     return user_level >= req_level
 
 
-def get_project_members(project_id: str, db_path: Path = None) -> List[Dict[str, Any]]:
+def get_project_members(project_id: str, db_path: Optional[Union[str, Path]] = None) -> List[Dict[str, Any]]:
     """List all registered members and the owner for a project."""
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
@@ -1264,7 +1520,7 @@ def get_project_members(project_id: str, db_path: Path = None) -> List[Dict[str,
             "id": owner_row["user_id"],
             "username": owner_row["username"],
             "role": "owner",
-            "createdAt": str(owner_row["created_at"]) if owner_row["created_at"] else None,
+            "createdAt": str(owner_row["created_at"]) if owner_row.get("created_at") is not None else None,
         })
         seen_users.add(owner_row["username"].lower())
 
@@ -1276,13 +1532,13 @@ def get_project_members(project_id: str, db_path: Path = None) -> List[Dict[str,
                 "id": r["user_id"],
                 "username": r["username"],
                 "role": r["role"],
-                "createdAt": str(r["created_at"]) if r["created_at"] else None,
+                "createdAt": str(r["created_at"]) if r.get("created_at") is not None else None,
             })
 
     return members
 
 
-def add_project_member(project_id: str, target_username: str, role: str, requesting_username: str, db_path: Path = None):
+def add_project_member(project_id: str, target_username: str, role: str, requesting_username: str, db_path: Optional[Union[str, Path]] = None):
     """Add an existing user to a project with a specific role."""
     if not check_user_permission(project_id, requesting_username, "admin", db_path=db_path):
         return {"success": False, "error": "Insufficient permissions to add project members."}
@@ -1303,15 +1559,21 @@ def add_project_member(project_id: str, target_username: str, role: str, request
     target_user_id = t_user["id"]
     member_id = f"pm-{uuid.uuid4().hex[:8]}"
 
-    try:
+    # Check if member already exists
+    cursor.execute(
+        "SELECT id FROM project_members WHERE project_id = ? AND (user_id = ? OR LOWER(user_id) = ?)",
+        (project_id, target_user_id, target_clean),
+    )
+    existing_m = cursor.fetchone()
+    if existing_m:
+        cursor.execute(
+            "UPDATE project_members SET role = ? WHERE id = ?",
+            (role, existing_m["id"]),
+        )
+    else:
         cursor.execute(
             "INSERT INTO project_members (id, project_id, user_id, role) VALUES (?, ?, ?, ?)",
             (member_id, project_id, target_user_id, role),
-        )
-    except sqlite3.IntegrityError:
-        cursor.execute(
-            "UPDATE project_members SET role = ? WHERE project_id = ? AND (user_id = ? OR LOWER(user_id) = ?)",
-            (role, project_id, target_user_id, target_clean),
         )
 
     conn.commit()
@@ -1340,7 +1602,7 @@ def add_project_member(project_id: str, target_username: str, role: str, request
     return {"success": True, "username": target_clean, "role": role}
 
 
-def remove_project_member(project_id: str, target_username: str, requesting_username: str, db_path: Path = None):
+def remove_project_member(project_id: str, target_username: str, requesting_username: str, db_path: Optional[Union[str, Path]] = None):
     """Remove a user from project members."""
     if not check_user_permission(project_id, requesting_username, "admin", db_path=db_path):
         return {"success": False, "error": "Insufficient permissions to remove project members."}
@@ -1390,7 +1652,7 @@ def log_activity(
     entity_id: str,
     message: str,
     details: dict = None,
-    db_path: Path = None,
+    db_path: Optional[Union[str, Path]] = None,
 ):
     """Log an audit event for a project."""
     conn = get_db_connection(db_path)
@@ -1409,7 +1671,7 @@ def log_activity(
     return log_id
 
 
-def get_project_activities(project_id: str, user_id: str, limit: int = 50, offset: int = 0, db_path: Path = None):
+def get_project_activities(project_id: str, user_id: str, limit: int = 50, offset: int = 0, db_path: Optional[Union[str, Path]] = None):
     """Retrieve audit history for a project with pagination."""
     if not check_user_permission(project_id, user_id, "viewer", db_path=db_path):
         return []
@@ -1417,12 +1679,13 @@ def get_project_activities(project_id: str, user_id: str, limit: int = 50, offse
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
 
+    # Portable ordering: created_at DESC, id DESC
     cursor.execute(
         """
         SELECT id, project_id, user_id, action_type, entity_type, entity_id, message, details, created_at
         FROM activity_log
         WHERE project_id = ?
-        ORDER BY created_at DESC, rowid DESC
+        ORDER BY created_at DESC, id DESC
         LIMIT ? OFFSET ?
         """,
         (project_id, limit, offset),
@@ -1433,7 +1696,7 @@ def get_project_activities(project_id: str, user_id: str, limit: int = 50, offse
     res = []
     for r in rows:
         dt = {}
-        if r["details"]:
+        if r.get("details"):
             try:
                 dt = json.loads(r["details"]) if isinstance(r["details"], str) else r["details"]
             except Exception:
@@ -1447,7 +1710,7 @@ def get_project_activities(project_id: str, user_id: str, limit: int = 50, offse
             "entityId": r["entity_id"],
             "message": r["message"],
             "details": dt,
-            "createdAt": str(r["created_at"]) if r["created_at"] else None,
+            "createdAt": str(r["created_at"]) if r.get("created_at") is not None else None,
         })
     return res
 
@@ -1458,7 +1721,7 @@ def create_notification(
     notif_type: str,
     title: str,
     message: str,
-    db_path: Path = None,
+    db_path: Optional[Union[str, Path]] = None,
 ):
     """Create a user notification."""
     conn = get_db_connection(db_path)
@@ -1488,7 +1751,7 @@ def create_notification(
     return notif_id
 
 
-def check_and_generate_due_date_notifications(username: str, db_path: Path = None):
+def check_and_generate_due_date_notifications(username: str, db_path: Optional[Union[str, Path]] = None):
     """Generate notifications for upcoming task due dates."""
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
@@ -1533,7 +1796,7 @@ def check_and_generate_due_date_notifications(username: str, db_path: Path = Non
             pass
 
 
-def get_user_notifications(username: str, limit: int = 50, offset: int = 0, db_path: Path = None) -> Dict[str, Any]:
+def get_user_notifications(username: str, limit: int = 50, offset: int = 0, db_path: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
     """Retrieve paginated notifications for the authenticated user."""
     check_and_generate_due_date_notifications(username, db_path=db_path)
 
@@ -1562,18 +1825,18 @@ def get_user_notifications(username: str, limit: int = 50, offset: int = 0, db_p
             unread_count += 1
         notifications.append({
             "id": r["id"],
-            "projectId": r["project_id"],
+            "projectId": r.get("project_id"),
             "type": r["type"],
             "title": r["title"],
             "message": r["message"],
             "isRead": is_read_bool,
-            "createdAt": str(r["created_at"]) if r["created_at"] else None,
+            "createdAt": str(r["created_at"]) if r.get("created_at") is not None else None,
         })
 
     return {"notifications": notifications, "unreadCount": unread_count}
 
 
-def mark_notification_as_read(notif_id: str, username: str, db_path: Path = None):
+def mark_notification_as_read(notif_id: str, username: str, db_path: Optional[Union[str, Path]] = None):
     """Mark an unread notification as read."""
     conn = get_db_connection(db_path)
     cursor = conn.cursor()
@@ -1586,7 +1849,7 @@ def mark_notification_as_read(notif_id: str, username: str, db_path: Path = None
     return True
 
 
-def mark_all_notifications_read(username: str, db_path: Path = None):
+def mark_all_notifications_read(username: str, db_path: Optional[Union[str, Path]] = None):
     """Mark all notifications as read for the user."""
     conn = get_db_connection(db_path)
     cursor = conn.cursor()

@@ -15,7 +15,7 @@ def setup_test_db(monkeypatch):
             TEST_DB_PATH.unlink()
         except Exception:
             pass
-    monkeypatch.setattr(database, "DB_PATH", TEST_DB_PATH)
+    monkeypatch.setenv("DATABASE_PATH", str(TEST_DB_PATH))
     database.init_db(TEST_DB_PATH)
     yield
     if TEST_DB_PATH.exists():

@@ -11,6 +11,8 @@ services:
     envVars:
       - key: PORT
         value: 8000
+      - key: DATABASE_URL
+        sync: false
       - key: DATABASE_PATH
         value: /data/pm.db
       - key: CORS_ORIGINS

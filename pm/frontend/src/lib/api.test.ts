@@ -39,4 +39,9 @@ describe("api client", () => {
       })
     );
   });
+
+  it("propagates errors on fetchBoard network failure", async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error("Network disconnect"));
+    await expect(fetchBoard("board-test-123")).rejects.toThrow("Network disconnect");
+  });
 });

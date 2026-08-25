@@ -39,31 +39,51 @@ RATE_LIMIT_LOGIN_MAX = int(os.getenv("RATE_LIMIT_LOGIN_MAX", "15"))
 RATE_LIMIT_LOGIN_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_LOGIN_WINDOW_SECONDS", "60"))
 
 # Database & Persistence Configuration
-def get_database_path() -> Path:
-    """Authoritative database path resolver.
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+
+
+def get_database_url() -> str:
+    """Authoritative database connection URL resolver.
     
     Order of precedence:
-    1. DATABASE_PATH environment variable (if explicitly set)
-    2. Render Persistent Disk mount directory (/data/pm.db if /data is a directory)
-    3. Container data directory (BASE_DIR / data / pm.db if exists)
+    1. DATABASE_URL environment variable (PostgreSQL, SQLite URI, etc.)
+    2. DATABASE_PATH environment variable (SQLite file path)
+    3. Render Persistent Disk mount directory (/data/pm.db if /data is a directory)
     4. Local development file BASE_DIR / pm.db
     """
+    raw_url = os.getenv("DATABASE_URL", "").strip()
+    if raw_url:
+        # Standardize postgres:// to postgresql:// for compatibility with psycopg/SQLAlchemy
+        if raw_url.startswith("postgres://"):
+            return "postgresql://" + raw_url[len("postgres://"):]
+        return raw_url
+
+    env_path = os.getenv("DATABASE_PATH", "").strip()
+    if env_path:
+        return f"sqlite:///{Path(env_path).resolve()}"
+
+    render_data_dir = Path("/data")
+    if render_data_dir.exists() and render_data_dir.is_dir():
+        return f"sqlite:///{ (render_data_dir / 'pm.db').resolve() }"
+
+    container_data_dir = BASE_DIR / "data"
+    if container_data_dir.exists() and container_data_dir.is_dir():
+        return f"sqlite:///{ (container_data_dir / 'pm.db').resolve() }"
+
+    return f"sqlite:///{ (BASE_DIR / 'pm.db').resolve() }"
+
+
+def get_database_path() -> Path:
+    """Authoritative SQLite database path resolver for backwards compatibility."""
+    url = get_database_url()
+    if url.startswith("sqlite:///"):
+        return Path(url[len("sqlite:///"):]).resolve()
+    elif url.startswith("sqlite://"):
+        return Path(url[len("sqlite://"):]).resolve()
+    
     env_path = os.getenv("DATABASE_PATH", "").strip()
     if env_path:
         return Path(env_path).resolve()
 
-    render_data_dir = Path("/data")
-    if render_data_dir.exists() and render_data_dir.is_dir():
-        return (render_data_dir / "pm.db").resolve()
-
-    container_data_dir = BASE_DIR / "data"
-    if container_data_dir.exists() and container_data_dir.is_dir():
-        return (container_data_dir / "pm.db").resolve()
-
     return (BASE_DIR / "pm.db").resolve()
-
-
-DATABASE_PATH = os.getenv("DATABASE_PATH", "").strip()
-
-
 

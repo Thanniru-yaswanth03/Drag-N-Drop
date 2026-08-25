@@ -26,8 +26,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt-get/lists/*
 
 # Install Python requirements
-COPY backend/pyproject.toml backend/requirements.txt* ./
-RUN pip install --no-cache-dir fastapi uvicorn httpx pydantic python-dotenv
+COPY backend/requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy backend code
 COPY backend/ ./
@@ -38,15 +38,12 @@ COPY --from=frontend-builder /app/frontend/out ./static
 # Ensure persistent mount directory exists
 RUN mkdir -p /data
 
-ENV DATABASE_PATH=/data/pm.db
-
 # Expose production application port
 EXPOSE 8000
-
 
 # Healthcheck definition
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD curl -f http://localhost:8000/api/health || exit 1
 
 # Start production uvicorn server
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "python -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
 
