@@ -35,9 +35,8 @@ export function useWebSocket({ projectId, username, onMessage }: UseWebSocketOpt
       if ((window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") && window.location.protocol === "http:") {
         wsHost = "127.0.0.1:8008";
         wsProtocol = "ws:";
-      }
- else if (window.location.port !== "8000") {
-        wsHost = "drag-n-drop-backend.onrender.com";
+      } else if (window.location.port !== "8000") {
+        wsHost = "drag-n-drop-28p3.onrender.com";
         wsProtocol = "wss:";
       }
     }

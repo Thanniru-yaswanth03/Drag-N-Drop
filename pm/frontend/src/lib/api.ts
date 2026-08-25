@@ -24,7 +24,7 @@ export const getApiUrl = (path: string) => {
     if (window.location.port === "8001" || window.location.port === "8000") {
       return path;
     }
-    return `https://drag-n-drop-backend.onrender.com${path}`;
+    return `https://drag-n-drop-28p3.onrender.com${path}`;
   }
   return path;
 };
