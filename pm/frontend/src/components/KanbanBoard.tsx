@@ -147,14 +147,19 @@ export const KanbanBoard = () => {
   // Fetch user projects list whenever authenticated user changes
   useEffect(() => {
     if (!user) {
-      setProjects([]);
-      setActiveProjectId(null);
+      queueMicrotask(() => {
+        setProjects([]);
+        setActiveProjectId(null);
+      });
       return;
     }
 
-    setIsLoadingBoard(true);
+    let isMounted = true;
+    queueMicrotask(() => setIsLoadingBoard(true));
+
     fetchProjects()
       .then((projs) => {
+        if (!isMounted) return;
         if (Array.isArray(projs) && projs.length > 0) {
           setProjects(projs);
           setActiveProjectId((curr) => (curr && projs.some((p) => p.id === curr) ? curr : projs[0].id));
@@ -164,39 +169,51 @@ export const KanbanBoard = () => {
         }
       })
       .catch((err) => {
-        console.error("Error fetching projects from server:", err);
+        if (isMounted) console.error("Error fetching projects from server:", err);
       })
       .finally(() => {
-        setIsLoadingBoard(false);
+        if (isMounted) setIsLoadingBoard(false);
       });
+
+    return () => {
+      isMounted = false;
+    };
   }, [user]);
 
   // Fetch board data whenever active project changes
   useEffect(() => {
     if (!user || !activeProjectId) {
-      resetBoard(emptyBoardData);
+      queueMicrotask(() => resetBoard(emptyBoardData));
       return;
     }
 
-    resetBoard(emptyBoardData);
-    setIsLoadingBoard(true);
+    let isMounted = true;
+    queueMicrotask(() => {
+      resetBoard(emptyBoardData);
+      setIsLoadingBoard(true);
+    });
 
     fetchBoard(activeProjectId)
       .then((data) => {
+        if (!isMounted) return;
         if (data && data.columns && Array.isArray(data.columns)) {
           resetBoard(data);
         }
       })
       .catch((err) => {
-        console.error("Error fetching board from backend:", err);
+        if (isMounted) console.error("Error fetching board from backend:", err);
       })
       .finally(() => {
-        setIsLoadingBoard(false);
+        if (isMounted) setIsLoadingBoard(false);
       });
 
     fetchProjectMembers(activeProjectId).then((res) => {
-      setUserRole(res.userRole || "viewer");
+      if (isMounted) setUserRole(res.userRole || "viewer");
     });
+
+    return () => {
+      isMounted = false;
+    };
   }, [user, activeProjectId, resetBoard]);
 
   const persistBoard = useCallback(

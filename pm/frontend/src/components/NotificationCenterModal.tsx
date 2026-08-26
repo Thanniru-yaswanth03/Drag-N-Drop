@@ -72,6 +72,7 @@ export const NotificationCenterModal = ({
                 Notifications & Reminders
               </h3>
               <p className="text-xs text-[var(--gray-text)]">
+                {username ? `Alerts for @${username} • ` : ""}
                 {unreadCount > 0 ? `${unreadCount} unread message(s)` : "All caught up!"}
               </p>
             </div>
