@@ -143,12 +143,7 @@ export const KanbanColumn = memo(
         </div>
       </section>
     );
-  },
-  (prev, next) =>
-    prev.column.id === next.column.id &&
-    prev.column.title === next.column.title &&
-    prev.cards.length === next.cards.length &&
-    prev.cards.every((c, i) => c.id === next.cards[i]?.id && c.updatedAt === next.cards[i]?.updatedAt)
+  }
 );
 
 KanbanColumn.displayName = "KanbanColumn";
