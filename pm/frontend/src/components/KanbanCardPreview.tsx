@@ -1,3 +1,5 @@
+"use client";
+
 import type { Card } from "@/lib/kanban";
 import clsx from "clsx";
 
@@ -5,21 +7,21 @@ type KanbanCardPreviewProps = {
   card: Card;
 };
 
-const priorityStyles = {
+const priorityConfig = {
   high: {
-    badge: "bg-red-500/20 text-red-500 border-red-500/40",
+    badge: "bg-red-500/20 text-red-400 border-red-500/40",
     dot: "bg-red-500 animate-pulse",
     icon: "🔥",
     label: "High",
   },
   medium: {
-    badge: "bg-amber-500/20 text-amber-500 border-amber-500/40",
+    badge: "bg-amber-500/20 text-amber-400 border-amber-500/40",
     dot: "bg-amber-500",
     icon: "⚡",
     label: "Medium",
   },
   low: {
-    badge: "bg-emerald-500/20 text-emerald-500 border-emerald-500/40",
+    badge: "bg-emerald-500/20 text-emerald-400 border-emerald-500/40",
     dot: "bg-emerald-500",
     icon: "🟢",
     label: "Low",
@@ -28,10 +30,15 @@ const priorityStyles = {
 
 export const KanbanCardPreview = ({ card }: KanbanCardPreviewProps) => {
   const priority = card.priority || "medium";
-  const pStyle = priorityStyles[priority];
+  const pStyle = priorityConfig[priority] || priorityConfig.medium;
 
   return (
-    <article className="group relative rounded-2xl border-2 border-[var(--primary-blue)] bg-[var(--card-bg)] p-4 shadow-[0_25px_60px_-12px_rgba(2,132,199,0.4)] backdrop-blur-xl rotate-[3deg] scale-[1.04] transition-all duration-150 ring-4 ring-[var(--primary-blue)]/20 cursor-grabbing">
+    <article
+      className="group relative rounded-2xl border-2 border-[var(--accent-amber)] bg-[var(--surface-floating)] p-4 shadow-[var(--shadow-drag)] backdrop-blur-2xl rotate-[2.5deg] scale-[1.03] transition-transform duration-100 ring-4 ring-[var(--accent-amber-glow)] cursor-grabbing select-none"
+      style={{
+        transform: "perspective(1000px) translateZ(32px) rotate(2.5deg)",
+      }}
+    >
       <div className="flex items-center justify-between gap-2 mb-2.5">
         <span
           className={clsx(
@@ -43,12 +50,12 @@ export const KanbanCardPreview = ({ card }: KanbanCardPreviewProps) => {
           <span>{pStyle.icon}</span>
           <span>{pStyle.label}</span>
         </span>
-        <span className="text-[10px] font-extrabold uppercase tracking-wider text-[var(--primary-blue)] animate-pulse">
-          ✨ Dragging Task
+        <span className="inline-flex items-center gap-1 rounded-full bg-[var(--accent-amber)]/20 text-[var(--accent-amber)] px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider animate-pulse border border-[var(--accent-amber)]/30">
+          <span>✨</span> Dragging
         </span>
       </div>
 
-      <h4 className="font-display text-base font-bold text-[var(--navy-dark)] leading-snug">
+      <h4 className="font-display text-sm sm:text-base font-bold text-[var(--navy-dark)] leading-snug tracking-tight">
         {card.title}
       </h4>
       {(card.details || card.description) && (
@@ -57,9 +64,9 @@ export const KanbanCardPreview = ({ card }: KanbanCardPreviewProps) => {
         </p>
       )}
 
-      <div className="mt-3 flex flex-wrap items-center gap-2 pt-2 border-t border-[var(--stroke)]/50">
+      <div className="mt-3 flex flex-wrap items-center gap-2 pt-2.5 border-t border-[var(--stroke)]">
         {card.dueDate && (
-          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold bg-[var(--surface)] text-[var(--gray-text)] border border-[var(--stroke)]">
+          <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold bg-[var(--surface-input)] text-[var(--gray-text)] border border-[var(--stroke)]">
             📅 {card.dueDate}
           </span>
         )}
@@ -69,7 +76,7 @@ export const KanbanCardPreview = ({ card }: KanbanCardPreviewProps) => {
             {card.tags.slice(0, 2).map((tag, idx) => (
               <span
                 key={`${tag}-${idx}`}
-                className="inline-flex items-center rounded-md bg-[var(--primary-blue)]/10 text-[var(--primary-blue)] px-1.5 py-0.5 text-[10px] font-semibold"
+                className="inline-flex items-center rounded-md bg-[var(--surface-input)] border border-[var(--stroke)] text-[var(--navy-dark)] px-1.5 py-0.5 text-[10px] font-semibold"
               >
                 #{tag}
               </span>
@@ -78,7 +85,7 @@ export const KanbanCardPreview = ({ card }: KanbanCardPreviewProps) => {
         )}
 
         {card.assignee && (
-          <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-[var(--secondary-purple)]/20 text-[var(--secondary-purple)] px-2 py-0.5 text-[10px] font-bold">
+          <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-[var(--surface-input)] border border-[var(--stroke)] text-[var(--navy-dark)] px-2 py-0.5 text-[10px] font-bold">
             👤 @{card.assignee}
           </span>
         )}
@@ -86,4 +93,3 @@ export const KanbanCardPreview = ({ card }: KanbanCardPreviewProps) => {
     </article>
   );
 };
-

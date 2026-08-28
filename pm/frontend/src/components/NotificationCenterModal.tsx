@@ -62,18 +62,20 @@ export const NotificationCenterModal = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="w-full max-w-lg rounded-[28px] border border-[var(--stroke)] bg-[var(--card-bg)] p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200 my-8">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4 overflow-y-auto animate-in fade-in duration-150">
+      <div className="w-full max-w-lg rounded-3xl glass-floating p-6 shadow-2xl animate-in zoom-in-95 duration-150 my-8">
         <div className="flex items-center justify-between border-b border-[var(--stroke)] pb-4">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">🔔</span>
+          <div className="flex items-center gap-3">
+            <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-[var(--surface-input)] border border-[var(--stroke)] text-base">
+              🔔
+            </span>
             <div>
-              <h3 className="font-display text-xl font-semibold text-[var(--navy-dark)]">
+              <h3 className="font-display text-xl font-bold text-[var(--navy-dark)]">
                 Notifications & Reminders
               </h3>
-              <p className="text-xs text-[var(--gray-text)]">
+              <p className="text-xs text-[var(--gray-text)] font-mono">
                 {username ? `Alerts for @${username} • ` : ""}
-                {unreadCount > 0 ? `${unreadCount} unread message(s)` : "All caught up!"}
+                {unreadCount > 0 ? `${unreadCount} unread alert(s)` : "All caught up!"}
               </p>
             </div>
           </div>
@@ -81,7 +83,7 @@ export const NotificationCenterModal = ({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full p-2 text-[var(--gray-text)] hover:bg-[var(--surface)] hover:text-[var(--navy-dark)] transition"
+            className="rounded-full p-2 text-[var(--gray-text)] hover:bg-[var(--surface-column)] hover:text-[var(--navy-dark)] transition"
           >
             ✕
           </button>
@@ -92,7 +94,7 @@ export const NotificationCenterModal = ({
             <button
               type="button"
               onClick={handleMarkAllRead}
-              className="text-xs font-bold text-[var(--primary-blue)] hover:underline"
+              className="text-xs font-bold text-[var(--accent-amber)] hover:underline font-mono"
             >
               ✓ Mark all as read
             </button>
@@ -100,9 +102,9 @@ export const NotificationCenterModal = ({
         )}
 
         {/* Notifications List */}
-        <div className="mt-4 space-y-2.5 max-h-80 overflow-y-auto pr-1">
+        <div className="mt-4 space-y-2.5 max-h-80 overflow-y-auto pr-1 scrollbar-none">
           {loading ? (
-            <p className="text-center text-xs text-[var(--gray-text)] py-4">Loading notifications...</p>
+            <p className="text-center text-xs text-[var(--gray-text)] py-6 font-semibold">Loading notifications...</p>
           ) : notifications.length === 0 ? (
             <div className="text-center py-8 text-[var(--gray-text)]">
               <span className="text-3xl">🎉</span>
@@ -117,21 +119,21 @@ export const NotificationCenterModal = ({
                   onClick={() => !n.isRead && handleMarkRead(n.id)}
                   className={`flex items-start gap-3 rounded-2xl border p-3.5 transition cursor-pointer ${
                     n.isRead
-                      ? "border-[var(--stroke)]/60 bg-[var(--surface)]/50 opacity-75"
-                      : "border-[var(--primary-blue)]/40 bg-[var(--primary-blue)]/5 shadow-xs"
+                      ? "border-[var(--stroke)] bg-[var(--surface-input)]/50 opacity-70"
+                      : "border-[var(--accent-amber)]/40 bg-[var(--accent-amber)]/5 shadow-xs"
                   }`}
                 >
-                  <span className="text-lg mt-0.5">{icon}</span>
+                  <span className="text-base mt-0.5">{icon}</span>
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-bold text-[var(--navy-dark)]">{n.title}</p>
                       {!n.isRead && (
-                        <span className="h-2 w-2 rounded-full bg-[var(--primary-blue)]" title="Unread" />
+                        <span className="h-2 w-2 rounded-full bg-[var(--accent-amber)] animate-pulse" title="Unread" />
                       )}
                     </div>
                     <p className="mt-1 text-xs leading-relaxed text-[var(--gray-text)]">{n.message}</p>
                     {n.createdAt && (
-                      <p className="mt-1.5 text-[10px] font-semibold text-[var(--gray-text)] opacity-75">
+                      <p className="mt-1.5 text-[10px] font-semibold text-[var(--gray-text)] opacity-75 font-mono">
                         {new Date(n.createdAt).toLocaleString()}
                       </p>
                     )}
@@ -146,7 +148,7 @@ export const NotificationCenterModal = ({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl border border-[var(--stroke)] bg-[var(--surface)] px-5 py-2 text-xs font-bold text-[var(--navy-dark)] hover:bg-[var(--stroke)]"
+            className="rounded-xl border border-[var(--stroke)] bg-[var(--surface-input)] px-5 py-2 text-xs font-bold text-[var(--navy-dark)] hover:bg-[var(--surface-column)]"
           >
             Close
           </button>

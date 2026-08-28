@@ -28,6 +28,8 @@ import { ProjectMembersModal } from "@/components/ProjectMembersModal";
 import { NotificationCenterModal } from "@/components/NotificationCenterModal";
 import { TaskFilterToolbar } from "@/components/TaskFilterToolbar";
 import { AIAssistantWidget } from "@/components/AIAssistantWidget";
+import { SpatialBackground } from "@/components/SpatialBackground";
+import { CommandPalette } from "@/components/CommandPalette";
 import { useWebSocket } from "@/lib/useWebSocket";
 import {
   fetchBoard,
@@ -80,19 +82,27 @@ export const KanbanBoard = () => {
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
   const [isMembersModalOpen, setIsMembersModalOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [unreadNotifCount, setUnreadNotifCount] = useState(0);
   const [, setUserRole] = useState<string>("owner");
   const [aiNotification, setAiNotification] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [filters, setFilters] = useState<FilterOptions>(defaultFilterOptions);
   const [sortOption, setSortOption] = useState<SortOptionType>(defaultSortOption);
+
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  }, []);
 
   // Real-Time WebSocket Channel
   const handleWsMessage = useCallback((payload: unknown) => {
     const data = payload as { type?: string; board?: BoardData; projectId?: string };
     if (data && data.type === "BOARD_UPDATED" && data.board && data.projectId === activeProjectId) {
       setBoard(data.board);
+      showToast("⚡ Board synchronized with live changes");
     }
-  }, [setBoard, activeProjectId]);
+  }, [setBoard, activeProjectId, showToast]);
 
   const { isConnected: isWsConnected } = useWebSocket({
     projectId: activeProjectId,
@@ -113,7 +123,7 @@ export const KanbanBoard = () => {
     return () => clearInterval(timer);
   }, [refreshNotifications]);
 
-  // Initial Auth Verification (Single Source of Truth)
+  // Initial Auth Verification
   useEffect(() => {
     const handleUnauthorized = () => {
       setUser(null);
@@ -229,9 +239,16 @@ export const KanbanBoard = () => {
     [user, activeProjectId]
   );
 
-  // Keyboard Shortcuts for Undo (Ctrl+Z) and Redo (Ctrl+Y / Ctrl+Shift+Z)
+  // Global Keyboard Shortcuts (Ctrl+K, Undo Ctrl+Z, Redo Ctrl+Y / Shift+Z)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Command Palette (Ctrl+K / Cmd+K)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+        return;
+      }
+
       const targetTag = (e.target as HTMLElement)?.tagName;
       if (["INPUT", "TEXTAREA", "SELECT"].includes(targetTag)) return;
 
@@ -240,27 +257,36 @@ export const KanbanBoard = () => {
           e.preventDefault();
           if (canRedo) {
             const next = redo();
-            if (next) persistBoard(next);
+            if (next) {
+              persistBoard(next);
+              showToast("↪️ Reapplied board action");
+            }
           }
         } else {
           e.preventDefault();
           if (canUndo) {
             const prev = undo();
-            if (prev) persistBoard(prev);
+            if (prev) {
+              persistBoard(prev);
+              showToast("↩️ Reverted last board action");
+            }
           }
         }
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
         e.preventDefault();
         if (canRedo) {
           const next = redo();
-          if (next) persistBoard(next);
+          if (next) {
+            persistBoard(next);
+            showToast("↪️ Reapplied board action");
+          }
         }
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [canUndo, canRedo, undo, redo, persistBoard]);
+  }, [canUndo, canRedo, undo, redo, persistBoard, showToast]);
 
   const handleCreateProject = async (name: string) => {
     if (!user) return;
@@ -268,6 +294,7 @@ export const KanbanBoard = () => {
     if (newProj && newProj.id) {
       setProjects((prev) => [...prev, newProj]);
       setActiveProjectId(newProj.id);
+      showToast(`📁 Created project "${name}"`);
     }
   };
 
@@ -276,6 +303,7 @@ export const KanbanBoard = () => {
     const updated = await updateProjectApi(projId, name);
     if (updated) {
       setProjects((prev) => prev.map((p) => (p.id === projId ? updated : p)));
+      showToast(`📝 Renamed project to "${name}"`);
     }
   };
 
@@ -290,6 +318,7 @@ export const KanbanBoard = () => {
       } else {
         setActiveProjectId(null);
       }
+      showToast("🗑️ Project deleted");
     }
   };
 
@@ -329,7 +358,8 @@ export const KanbanBoard = () => {
   const handleResetFilters = useCallback(() => {
     setFilters(defaultFilterOptions);
     setSortOption(defaultSortOption);
-  }, []);
+    showToast("↺ Filters reset to default view");
+  }, [showToast]);
 
   const totalTasks = useMemo(() => Object.keys(board.cards).length, [board.cards]);
 
@@ -416,6 +446,7 @@ export const KanbanBoard = () => {
             : col
         ),
       }));
+      showToast(`➕ Added task "${title}"`);
     }
   };
 
@@ -436,6 +467,7 @@ export const KanbanBoard = () => {
           cards: nextCards,
         };
       });
+      showToast("🗑️ Task deleted");
     } else {
       console.error(`Failed to delete card ${cardId} on server.`);
     }
@@ -456,6 +488,7 @@ export const KanbanBoard = () => {
           col.id === columnId ? { ...col, cardIds: [] } : col
         ),
       }));
+      showToast(`🧹 Cleared all tasks in ${targetCol.title}`);
     }
   };
 
@@ -486,6 +519,7 @@ export const KanbanBoard = () => {
           [cardId]: res,
         },
       }));
+      showToast(`✏️ Updated "${title}"`);
     } else {
       console.error(`Failed to update card ${cardId} on server.`);
     }
@@ -506,6 +540,13 @@ export const KanbanBoard = () => {
     setUser(username);
   }, []);
 
+  const handleToggleTheme = useCallback(() => {
+    const current = document.documentElement.getAttribute("data-theme") || "dark";
+    const next = current === "light" ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("pm_theme", next);
+  }, []);
+
   if (!isAuthLoaded) {
     return null;
   }
@@ -517,20 +558,28 @@ export const KanbanBoard = () => {
   const activeCard = activeCardId ? cardsById[activeCardId] : null;
 
   return (
-    <div className="relative overflow-hidden min-h-screen">
-      {/* Background Gradients */}
-      <div className="pointer-events-none absolute left-0 top-0 h-[500px] w-[500px] -translate-x-1/3 -translate-y-1/3 rounded-full bg-[radial-gradient(circle,_rgba(2,132,199,0.2)_0%,_rgba(2,132,199,0.02)_60%,_transparent_75%)]" />
-      <div className="pointer-events-none absolute bottom-0 right-0 h-[600px] w-[600px] translate-x-1/4 translate-y-1/4 rounded-full bg-[radial-gradient(circle,_rgba(147,51,234,0.18)_0%,_rgba(147,51,234,0.02)_60%,_transparent_75%)]" />
+    <div className="relative overflow-hidden min-h-screen spatial-perspective select-text">
+      {/* Layer 0: Spatial Environment Canvas (Matrix Grid & Ambient Illumination) */}
+      <SpatialBackground />
 
-      {/* Floating AI Toast Banner */}
+      {/* Real-Time Toast Notifications */}
+      {toastMessage && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-2xl border border-[var(--stroke-strong)] bg-[var(--surface-floating)] px-4 py-2.5 shadow-2xl backdrop-blur-2xl animate-in fade-in slide-in-from-top-3 duration-200">
+          <span className="text-xs font-semibold text-[var(--navy-dark)]">
+            {toastMessage}
+          </span>
+        </div>
+      )}
+
+      {/* Floating AI Notification Banner */}
       {aiNotification && (
-        <div className="fixed top-6 right-6 z-50 flex items-center gap-3 rounded-2xl border border-[var(--primary-blue)]/50 bg-[var(--card-bg)] px-5 py-3.5 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-top-4 duration-300">
-          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-[var(--secondary-purple)] to-[var(--primary-blue)] text-white text-sm font-bold shadow-md">
+        <div className="fixed top-6 right-6 z-50 flex items-center gap-3 rounded-2xl border border-[var(--accent-amber)] bg-[var(--surface-floating)] px-5 py-3 shadow-2xl backdrop-blur-2xl animate-in fade-in slide-in-from-top-4 duration-300">
+          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent-amber)] text-black text-sm font-bold shadow-md">
             ✨
           </span>
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--primary-blue)]">
-              AI Kanban Action
+            <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-amber)] font-mono">
+              AI Command Core Action
             </p>
             <p className="text-xs font-semibold text-[var(--navy-dark)]">
               {aiNotification}
@@ -539,12 +588,14 @@ export const KanbanBoard = () => {
         </div>
       )}
 
-      <main className="relative mx-auto flex min-h-screen max-w-[1600px] flex-col gap-6 sm:gap-8 px-3 sm:px-6 pb-12 sm:pb-16 pt-4 sm:pt-10 w-full max-w-full overflow-x-hidden">
-        {/* Header Section */}
-        <header className="flex flex-col gap-6 rounded-2xl sm:rounded-[36px] border border-[var(--stroke)] bg-[var(--card-bg)]/80 p-4 sm:p-8 shadow-[var(--shadow)] backdrop-blur-xl w-full max-w-full overflow-hidden">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 w-full max-w-full">
+      {/* Main Command Center Chassis */}
+      <main className="relative mx-auto flex min-h-screen max-w-[1680px] flex-col gap-5 sm:gap-6 px-3 sm:px-6 pb-12 sm:pb-16 pt-4 sm:pt-6 w-full max-w-full overflow-x-hidden z-10">
+        {/* Layer 1: Spatial Command Header */}
+        <header className="flex flex-col gap-4 rounded-3xl glass-panel p-4 sm:p-6 shadow-[var(--shadow)] backdrop-blur-2xl w-full max-w-full overflow-hidden">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 w-full max-w-full">
+            {/* Left Header Section: Project, Badges, Title */}
             <div className="w-full lg:w-auto">
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
                 <ProjectSwitcher
                   projects={projects}
                   activeProjectId={activeProjectId}
@@ -553,36 +604,62 @@ export const KanbanBoard = () => {
                   onRenameProject={handleRenameProject}
                   onDeleteProject={handleDeleteProject}
                 />
-                <span className="rounded-full border border-[var(--stroke)] bg-[var(--surface-strong)] px-3 py-1 text-xs font-bold uppercase tracking-wider text-[var(--navy-dark)] shadow-sm">
+                <span className="rounded-full border border-[var(--stroke)] bg-[var(--surface-input)] px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-[var(--navy-dark)] shadow-2xs font-mono">
                   Workspace by YASH 🐐
                 </span>
-                <span className="rounded-full bg-[var(--primary-blue)]/10 px-3 py-0.5 text-xs font-bold text-[var(--primary-blue)]">
+                <span className="rounded-full bg-[var(--surface-input)] border border-[var(--stroke)] px-3 py-0.5 text-[11px] font-semibold text-[var(--navy-dark)] font-mono">
                   {totalTasks} Total Tasks
                 </span>
                 {highPriorityCount > 0 && (
-                  <span className="rounded-full bg-red-500/10 px-3 py-0.5 text-xs font-bold text-red-500">
+                  <span className="rounded-full bg-red-500/15 border border-red-500/30 px-3 py-0.5 text-[11px] font-bold text-red-500 font-mono">
                     🔥 {highPriorityCount} High Priority
                   </span>
                 )}
               </div>
-              <h1 className="mt-2 font-display text-3xl sm:text-5xl font-extrabold tracking-tight bg-gradient-to-r from-[var(--navy-dark)] via-[var(--primary-blue)] to-[var(--secondary-purple)] bg-clip-text text-transparent">
-                Drag N Drop <span className="inline-block animate-bounce text-2xl sm:text-4xl">✨</span>
-              </h1>
-              <p className="mt-2 max-w-xl text-xs sm:text-sm leading-relaxed text-[var(--gray-text)]">
+
+              <div className="mt-2.5 flex flex-wrap items-baseline gap-3">
+                <h1 className="font-display text-2xl sm:text-4xl font-extrabold tracking-tight text-[var(--navy-dark)]">
+                  Drag N Drop <span className="inline-block animate-float text-xl sm:text-3xl">✨</span>
+                </h1>
+                <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--accent-amber)] font-mono bg-[var(--accent-amber)]/10 px-2 py-0.5 rounded-md border border-[var(--accent-amber)]/25">
+                  Spatial Command Center
+                </span>
+              </div>
+              <p className="mt-1 max-w-xl text-xs sm:text-sm leading-relaxed text-[var(--gray-text)]">
                 Organize, track, and automate your project workflow seamlessly with interactive drag-and-drop boards and smart AI automation.
               </p>
             </div>
 
+            {/* Right Header Section: Command Bar, Micro-Actions & Velocity */}
             <div className="flex flex-col sm:items-end gap-3 w-full lg:w-auto">
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full sm:w-auto">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 w-full sm:w-auto">
+                {/* Command Palette Trigger */}
+                <button
+                  type="button"
+                  onClick={() => setIsCommandPaletteOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-[var(--stroke)] bg-[var(--surface-input)] px-3.5 py-1.5 text-xs font-semibold text-[var(--navy-dark)] shadow-2xs transition hover:border-[var(--accent-amber)] hover:bg-[var(--surface-column)]"
+                  title="Open Command Palette (Ctrl+K)"
+                  aria-label="Open Command Palette"
+                >
+                  <span>🔍</span>
+                  <span className="hidden sm:inline">Commands</span>
+                  <kbd className="rounded-md border border-[var(--stroke)] bg-[var(--surface-column)] px-1.5 py-0.2 text-[10px] font-mono text-[var(--gray-text)]">
+                    ⌘K
+                  </kbd>
+                </button>
+
+                {/* Undo / Redo */}
                 <button
                   type="button"
                   onClick={() => {
                     const prev = undo();
-                    if (prev) persistBoard(prev);
+                    if (prev) {
+                      persistBoard(prev);
+                      showToast("↩️ Reverted last board action");
+                    }
                   }}
                   disabled={!canUndo}
-                  className="inline-flex items-center gap-1 rounded-full border border-[var(--stroke)] bg-[var(--surface-strong)] px-3 py-2 text-xs font-bold text-[var(--navy-dark)] shadow-sm transition hover:bg-[var(--stroke)] disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-1 rounded-2xl border border-[var(--stroke)] bg-[var(--surface-input)] px-3 py-1.5 text-xs font-bold text-[var(--navy-dark)] shadow-2xs transition hover:bg-[var(--surface-column)] disabled:opacity-40 disabled:cursor-not-allowed"
                   title="Undo (Ctrl+Z)"
                   aria-label="Undo"
                 >
@@ -593,20 +670,25 @@ export const KanbanBoard = () => {
                   type="button"
                   onClick={() => {
                     const next = redo();
-                    if (next) persistBoard(next);
+                    if (next) {
+                      persistBoard(next);
+                      showToast("↪️ Reapplied board action");
+                    }
                   }}
                   disabled={!canRedo}
-                  className="inline-flex items-center gap-1 rounded-full border border-[var(--stroke)] bg-[var(--surface-strong)] px-3 py-2 text-xs font-bold text-[var(--navy-dark)] shadow-sm transition hover:bg-[var(--stroke)] disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-1 rounded-2xl border border-[var(--stroke)] bg-[var(--surface-input)] px-3 py-1.5 text-xs font-bold text-[var(--navy-dark)] shadow-2xs transition hover:bg-[var(--surface-column)] disabled:opacity-40 disabled:cursor-not-allowed"
                   title="Redo (Ctrl+Y)"
                   aria-label="Redo"
                 >
                   <span>↪️</span>
                   <span className="hidden sm:inline">Redo</span>
                 </button>
+
+                {/* Modal Triggers */}
                 <button
                   type="button"
                   onClick={() => setIsMembersModalOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-[var(--stroke)] bg-[var(--surface-strong)] px-3 py-2 text-xs font-bold text-[var(--navy-dark)] shadow-sm transition hover:bg-[var(--stroke)] focus:outline-none"
+                  className="inline-flex items-center gap-1.5 rounded-2xl border border-[var(--stroke)] bg-[var(--surface-input)] px-3 py-1.5 text-xs font-bold text-[var(--navy-dark)] shadow-2xs transition hover:bg-[var(--surface-column)] focus:outline-none"
                   aria-label="Team Members"
                 >
                   <span>👥</span>
@@ -615,13 +697,13 @@ export const KanbanBoard = () => {
                 <button
                   type="button"
                   onClick={() => setIsNotificationsOpen(true)}
-                  className="relative inline-flex items-center gap-1.5 rounded-full border border-[var(--stroke)] bg-[var(--surface-strong)] px-3 py-2 text-xs font-bold text-[var(--navy-dark)] shadow-sm transition hover:bg-[var(--stroke)] focus:outline-none"
+                  className="relative inline-flex items-center gap-1.5 rounded-2xl border border-[var(--stroke)] bg-[var(--surface-input)] px-3 py-1.5 text-xs font-bold text-[var(--navy-dark)] shadow-2xs transition hover:bg-[var(--surface-column)] focus:outline-none"
                   aria-label="Notifications"
                 >
                   <span>🔔</span>
                   <span>Alerts</span>
                   {unreadNotifCount > 0 && (
-                    <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-extrabold text-white">
+                    <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-extrabold text-white font-mono">
                       {unreadNotifCount}
                     </span>
                   )}
@@ -629,46 +711,48 @@ export const KanbanBoard = () => {
                 <button
                   type="button"
                   onClick={() => setIsActivityModalOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-[var(--stroke)] bg-[var(--surface-strong)] px-3 py-2 text-xs font-bold text-[var(--navy-dark)] shadow-sm transition hover:bg-[var(--stroke)] focus:outline-none"
+                  className="inline-flex items-center gap-1.5 rounded-2xl border border-[var(--stroke)] bg-[var(--surface-input)] px-3 py-1.5 text-xs font-bold text-[var(--navy-dark)] shadow-2xs transition hover:bg-[var(--surface-column)] focus:outline-none"
                   aria-label="Activity Log"
                 >
                   <span>📜</span>
                   <span>Activity Log</span>
                 </button>
                 <ThemeToggle />
-                <div className="flex flex-wrap items-center gap-2 rounded-2xl sm:rounded-full border border-[var(--stroke)] bg-[var(--surface-strong)] px-3 py-2 sm:px-4 sm:py-2 shadow-sm text-xs max-w-full">
+
+                {/* Live Sync User Status Pill */}
+                <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-[var(--stroke)] bg-[var(--surface-input)] px-3 py-1.5 shadow-2xs text-xs max-w-full font-mono">
                   <span
-                    className={`h-2.5 w-2.5 rounded-full ${
-                      isWsConnected ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
+                    className={`h-2 w-2 rounded-full ${
+                      isWsConnected ? "bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]" : "bg-amber-500"
                     }`}
                     title={isWsConnected ? "Live Sync Active" : "Reconnecting..."}
                   />
-                  <span className="font-bold uppercase tracking-wider text-[var(--navy-dark)]">
-                    {user}
+                  <span className="font-bold text-[var(--navy-dark)]">
+                    @{user}
                   </span>
-                  <span className="font-semibold text-[var(--gray-text)] border-l border-[var(--stroke)] pl-2 sm:pl-3">
-                    {isSyncing ? "Syncing..." : isWsConnected ? "Live Sync" : "Saved"}
+                  <span className="text-[11px] font-semibold text-[var(--gray-text)] border-l border-[var(--stroke)] pl-2">
+                    {isSyncing ? "Syncing..." : isWsConnected ? "Live" : "Saved"}
                   </span>
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="ml-1 rounded-full bg-red-500/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-red-600 transition hover:bg-red-500 hover:text-white"
+                    className="ml-1 rounded-lg bg-red-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-red-500 transition hover:bg-red-500 hover:text-white"
                   >
                     Logout
                   </button>
                 </div>
               </div>
 
-              {/* Progress Bar Component */}
-              <div className="flex items-center gap-3 w-full sm:w-72 bg-[var(--surface)] p-2.5 rounded-2xl border border-[var(--stroke)]">
+              {/* Sprint Velocity Progress Component */}
+              <div className="flex items-center gap-3 w-full sm:w-80 bg-[var(--surface-input)] p-2.5 rounded-2xl border border-[var(--stroke)]">
                 <div className="flex-1">
-                  <div className="flex justify-between text-[11px] font-bold text-[var(--navy-dark)] mb-1">
-                    <span>Sprint Completion</span>
-                    <span className="text-[var(--primary-blue)]">{completionPercentage}%</span>
+                  <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider text-[var(--navy-dark)] mb-1 font-mono">
+                    <span>Sprint Velocity</span>
+                    <span className="text-[var(--accent-amber)] font-extrabold">{completionPercentage}%</span>
                   </div>
-                  <div className="h-2 w-full bg-[var(--surface-strong)] rounded-full overflow-hidden">
+                  <div className="h-1.5 w-full bg-[var(--surface-column)] rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-gradient-to-r from-[var(--primary-blue)] to-emerald-500 transition-all duration-500 rounded-full"
+                      className="h-full bg-gradient-to-r from-[var(--accent-amber)] to-[var(--accent-emerald)] transition-all duration-500 rounded-full"
                       style={{ width: `${completionPercentage}%` }}
                     />
                   </div>
@@ -677,7 +761,7 @@ export const KanbanBoard = () => {
             </div>
           </div>
 
-          {/* Filtering and Sorting Toolbar */}
+          {/* Filtering and Sorting Command Bar */}
           <TaskFilterToolbar
             columns={board.columns}
             availableTags={availableTags}
@@ -690,7 +774,7 @@ export const KanbanBoard = () => {
           />
         </header>
 
-        {/* Dynamic Board Columns */}
+        {/* Layer 2: Dynamic Spatial Board Columns */}
         <DndContext
           sensors={sensors}
           collisionDetection={collisionDetectionStrategy}
@@ -699,30 +783,32 @@ export const KanbanBoard = () => {
         >
           <section
             aria-label="Project Management Board"
-            className="flex-1 rounded-2xl sm:rounded-[36px] border border-[var(--stroke)] bg-[var(--card-bg)]/40 p-3 sm:p-6 shadow-[var(--shadow)] backdrop-blur-md"
+            className="flex-1 rounded-3xl glass-panel p-3 sm:p-5 shadow-[var(--shadow)] backdrop-blur-md"
           >
-            <div className="flex gap-4 sm:gap-6 overflow-x-auto pb-4 pt-1 snap-x no-scrollbar">
+            <div className="mobile-snap-scroll pb-2 pt-1 no-scrollbar">
               {filteredBoard.columns.map((column) => {
                 const cardsInColumn = column.cardIds
                   .map((id) => cardsById[id])
                   .filter(Boolean);
 
                 return (
-                  <KanbanColumn
-                    key={column.id}
-                    column={column}
-                    cards={cardsInColumn}
-                    onAddCard={handleAddCard}
-                    onDeleteCard={handleDeleteCard}
-                    onRename={handleRenameColumn}
-                    onClearColumn={handleClearColumn}
-                    onEditCard={setEditingCard}
-                  />
+                  <div key={column.id} className="mobile-snap-column">
+                    <KanbanColumn
+                      column={column}
+                      cards={cardsInColumn}
+                      onAddCard={handleAddCard}
+                      onDeleteCard={handleDeleteCard}
+                      onRename={handleRenameColumn}
+                      onClearColumn={handleClearColumn}
+                      onEditCard={setEditingCard}
+                    />
+                  </div>
                 );
               })}
             </div>
           </section>
 
+          {/* Layer 4: Drag Overlay with Physical Depth */}
           <DragOverlay>
             {activeCard ? <KanbanCardPreview card={activeCard} /> : null}
           </DragOverlay>
@@ -769,7 +855,50 @@ export const KanbanBoard = () => {
         />
       )}
 
-      {/* AI Assistant Floating Widget */}
+      {/* Developer-Grade Command Palette (Ctrl+K) */}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        board={board}
+        projects={projects}
+        activeProjectId={activeProjectId}
+        onSelectProject={setActiveProjectId}
+        onOpenAI={() => {
+          setIsCommandPaletteOpen(false);
+          // AI Widget trigger
+        }}
+        onOpenMembers={() => setIsMembersModalOpen(true)}
+        onOpenActivity={() => setIsActivityModalOpen(true)}
+        onOpenNotifications={() => setIsNotificationsOpen(true)}
+        onSelectCard={(c) => setEditingCard(c)}
+        onFilterChange={setFilters}
+        onResetFilters={handleResetFilters}
+        onUndo={() => {
+          const prev = undo();
+          if (prev) {
+            persistBoard(prev);
+            showToast("↩️ Reverted last board action");
+          }
+        }}
+        onRedo={() => {
+          const next = redo();
+          if (next) {
+            persistBoard(next);
+            showToast("↪️ Reapplied board action");
+          }
+        }}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onToggleTheme={handleToggleTheme}
+        onQuickAddTask={() => {
+          const firstCol = board.columns[0];
+          if (firstCol) {
+            handleAddCard(firstCol.id, "New Task", "Created via Command Palette");
+          }
+        }}
+      />
+
+      {/* Layer 5: Signature Floating AI Command Core / Gyro Orb */}
       <AIAssistantWidget
         board={board}
         projectId={activeProjectId}

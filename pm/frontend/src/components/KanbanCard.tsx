@@ -1,4 +1,6 @@
-import { memo } from "react";
+"use client";
+
+import { memo, useState, useRef, useCallback } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import clsx from "clsx";
@@ -10,61 +12,133 @@ type KanbanCardProps = {
   onEdit?: (card: Card) => void;
 };
 
+const priorityConfig = {
+  high: {
+    badge: "bg-red-500/10 text-red-500 border-red-500/30 dark:bg-red-500/15 dark:text-red-400 dark:border-red-500/30",
+    dot: "bg-red-500 animate-pulse",
+    icon: "🔥",
+    label: "High",
+  },
+  medium: {
+    badge: "bg-amber-500/10 text-amber-600 border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-400 dark:border-amber-500/30",
+    dot: "bg-amber-500",
+    icon: "⚡",
+    label: "Medium",
+  },
+  low: {
+    badge: "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-400 dark:border-emerald-500/30",
+    dot: "bg-emerald-500",
+    icon: "🟢",
+    label: "Low",
+  },
+};
+
 export const KanbanCard = memo(
   ({ card, onDelete, onEdit }: KanbanCardProps) => {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
       useSortable({ id: card.id });
 
-    const style: React.CSSProperties = {
-      transform: CSS.Transform.toString(transform),
-      transition,
-      touchAction: "none",
+    const [tilt, setTilt] = useState<{ rx: number; ry: number; x: number; y: number; active: boolean }>({
+      rx: 0,
+      ry: 0,
+      x: 50,
+      y: 50,
+      active: false,
+    });
+
+    const cardRef = useRef<HTMLElement | null>(null);
+
+    // Set node ref combining sortable and local ref for tilt calculations
+    const setCombinedRef = useCallback(
+      (node: HTMLElement | null) => {
+        cardRef.current = node;
+        setNodeRef(node);
+      },
+      [setNodeRef]
+    );
+
+    const handlePointerMove = (e: React.PointerEvent<HTMLElement>) => {
+      // Disable 3D tilt during active drag or on non-fine pointers
+      if (isDragging || e.pointerType === "touch") return;
+      if (!cardRef.current) return;
+
+      const rect = cardRef.current.getBoundingClientRect();
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
+      const normX = (px / rect.width - 0.5) * 2; // -1 to 1
+      const normY = (py / rect.height - 0.5) * 2; // -1 to 1
+
+      // Controlled subtle rotation (±2.5deg max) for tactile physical depth
+      const rx = -normY * 2.5;
+      const ry = normX * 2.5;
+
+      setTilt({
+        rx,
+        ry,
+        x: (px / rect.width) * 100,
+        y: (py / rect.height) * 100,
+        active: true,
+      });
     };
 
+    const handlePointerLeave = () => {
+      setTilt({ rx: 0, ry: 0, x: 50, y: 50, active: false });
+    };
 
-    const priorityStyles = {
-      high: {
-        badge: "bg-red-500/10 text-red-600 border-red-500/30 dark:bg-red-500/20 dark:text-red-400",
-        dot: "bg-red-500 animate-pulse",
-        icon: "🔥",
-        label: "High",
-      },
-      medium: {
-        badge: "bg-amber-500/10 text-amber-600 border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-400",
-        dot: "bg-amber-500",
-        icon: "⚡",
-        label: "Medium",
-      },
-      low: {
-        badge: "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 dark:bg-emerald-500/20 dark:text-emerald-400",
-        dot: "bg-emerald-500",
-        icon: "🟢",
-        label: "Low",
-      },
+    const transformString = CSS.Transform.toString(transform);
+
+    // Combine dnd-kit transform with subtle 3D tilt
+    const style: React.CSSProperties = {
+      transform: isDragging
+        ? transformString
+        : `${transformString ? `${transformString} ` : ""}perspective(800px) rotateX(${tilt.rx}deg) rotateY(${tilt.ry}deg) translateZ(${tilt.active ? 4 : 0}px)`,
+      transition: isDragging
+        ? transition
+        : tilt.active
+        ? "transform 0.08s ease-out, box-shadow 0.15s ease-out"
+        : `${transition ? `${transition}, ` : ""}transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1)`,
+      touchAction: "none",
+      willChange: "transform",
     };
 
     const priority = card.priority || "medium";
-    const pStyle = priorityStyles[priority];
+    const pStyle = priorityConfig[priority] || priorityConfig.medium;
+
+    const isOverdue =
+      card.dueDate && new Date(card.dueDate) < new Date(new Date().setHours(0, 0, 0, 0));
 
     return (
       <article
-        ref={setNodeRef}
+        ref={setCombinedRef}
         style={style}
         data-testid={`card-${card.id}`}
+        onPointerMove={handlePointerMove}
+        onPointerLeave={handlePointerLeave}
         className={clsx(
-          "group relative rounded-2xl border p-4 transition-all duration-200",
+          "group relative rounded-2xl border p-4 transition-colors duration-200 cursor-grab active:cursor-grabbing select-none overflow-hidden",
           isDragging
-            ? "opacity-30 border-2 border-dashed border-[var(--primary-blue)] bg-[var(--primary-blue)]/5 shadow-none scale-95"
-            : "border-[var(--stroke)] bg-[var(--card-bg)] shadow-[0_4px_20px_rgba(0,0,0,0.04)] hover:-translate-y-1 hover:shadow-[0_12px_28px_rgba(0,0,0,0.12)] hover:border-[var(--primary-blue)]/40"
+            ? "opacity-25 border-2 border-dashed border-[var(--accent-amber)] bg-[var(--accent-amber)]/5 shadow-none scale-[0.98]"
+            : "border-[var(--stroke)] bg-[var(--surface-card)] hover:bg-[var(--surface-card-hover)] shadow-[var(--shadow-card)] hover:shadow-[var(--shadow)] hover:border-[var(--stroke-highlight)]"
         )}
-
         {...attributes}
         {...listeners}
       >
+        {/* Specular dynamic light sheen on hover */}
+        {tilt.active && (
+          <div
+            className="pointer-events-none absolute inset-0 rounded-2xl opacity-40 transition-opacity duration-300"
+            style={{
+              background: `radial-gradient(circle at ${tilt.x}% ${tilt.y}%, rgba(255, 255, 255, 0.12) 0%, transparent 60%)`,
+            }}
+            aria-hidden="true"
+          />
+        )}
+
+        {/* Top Header: Priority Badge & Micro Actions */}
         <div className="flex items-center justify-between gap-2 mb-2.5">
           <span
             className={clsx(
-              "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+              "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-transform group-hover:scale-[1.02]",
               pStyle.badge
             )}
           >
@@ -72,7 +146,8 @@ export const KanbanCard = memo(
             <span>{pStyle.icon}</span>
             <span>{pStyle.label}</span>
           </span>
-          <div className="flex items-center gap-1 opacity-70 group-hover:opacity-100 transition">
+
+          <div className="flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity duration-150">
             {onEdit && (
               <button
                 type="button"
@@ -81,7 +156,7 @@ export const KanbanCard = memo(
                   e.stopPropagation();
                   onEdit(card);
                 }}
-                className="rounded-lg px-2 py-1 text-xs font-semibold text-[var(--gray-text)] hover:bg-[var(--surface)] hover:text-[var(--primary-blue)] transition"
+                className="rounded-lg px-2 py-1 text-xs font-semibold text-[var(--gray-text)] hover:bg-[var(--surface-column-header)] hover:text-[var(--accent-amber)] transition-colors"
                 aria-label={`Edit ${card.title}`}
               >
                 ✏️ Edit
@@ -94,7 +169,7 @@ export const KanbanCard = memo(
                 e.stopPropagation();
                 onDelete(card.id);
               }}
-              className="rounded-lg px-2 py-1 text-xs font-semibold text-[var(--gray-text)] hover:bg-red-500/10 hover:text-red-600 transition"
+              className="rounded-lg px-2 py-1 text-xs font-semibold text-[var(--gray-text)] hover:bg-red-500/10 hover:text-red-500 transition-colors"
               aria-label={`Delete ${card.title}`}
             >
               🗑️
@@ -102,25 +177,29 @@ export const KanbanCard = memo(
           </div>
         </div>
 
-        <h4 className="font-display text-base font-bold text-[var(--navy-dark)] leading-snug">
+        {/* Card Title */}
+        <h4 className="font-display text-sm sm:text-base font-bold text-[var(--navy-dark)] leading-snug tracking-tight">
           {card.title}
         </h4>
+
+        {/* Description Snippet */}
         {(card.details || card.description) && (
           <p className="mt-1.5 text-xs leading-relaxed text-[var(--gray-text)] line-clamp-3">
             {card.details || card.description}
           </p>
         )}
 
-        <div className="mt-3 flex flex-wrap items-center gap-2 pt-2 border-t border-[var(--stroke)]/50">
+        {/* Footer Meta: Due Date, Tags, Assignee */}
+        <div className="mt-3 flex flex-wrap items-center gap-2 pt-2.5 border-t border-[var(--stroke)]">
           {card.dueDate && (
             <span
               className={clsx(
-                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold border",
-                new Date(card.dueDate) < new Date(new Date().setHours(0, 0, 0, 0))
-                  ? "bg-red-500/10 text-red-600 border-red-500/30"
-                  : "bg-[var(--surface)] text-[var(--gray-text)] border-[var(--stroke)]"
+                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold border transition-colors",
+                isOverdue
+                  ? "bg-red-500/15 text-red-500 border-red-500/30"
+                  : "bg-[var(--surface-input)] text-[var(--gray-text)] border-[var(--stroke)]"
               )}
-              title={`Due: ${card.dueDate}`}
+              title={`Due: ${card.dueDate}${isOverdue ? " (Overdue)" : ""}`}
             >
               <span>📅</span>
               <span>{card.dueDate}</span>
@@ -132,7 +211,7 @@ export const KanbanCard = memo(
               {card.tags.map((tag, idx) => (
                 <span
                   key={`${tag}-${idx}`}
-                  className="inline-flex items-center rounded-md bg-[var(--primary-blue)]/10 text-[var(--primary-blue)] px-1.5 py-0.5 text-[10px] font-semibold"
+                  className="inline-flex items-center rounded-md bg-[var(--surface-input)] border border-[var(--stroke)] text-[var(--navy-dark)] px-1.5 py-0.5 text-[10px] font-semibold"
                 >
                   #{tag}
                 </span>
@@ -141,13 +220,14 @@ export const KanbanCard = memo(
           )}
 
           {card.assignee && (
-            <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-[var(--secondary-purple)]/10 text-[var(--secondary-purple)] px-2 py-0.5 text-[10px] font-bold border border-[var(--secondary-purple)]/20">
-              <span>👤</span>
+            <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-[var(--surface-input)] border border-[var(--stroke)] text-[var(--navy-dark)] px-2 py-0.5 text-[10px] font-bold shadow-2xs">
+              <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[var(--accent-amber)]/20 text-[var(--accent-amber)] text-[8px]">
+                👤
+              </span>
               <span>{card.assignee}</span>
             </span>
           )}
         </div>
-
       </article>
     );
   },
@@ -155,6 +235,7 @@ export const KanbanCard = memo(
     prev.card.id === next.card.id &&
     prev.card.title === next.card.title &&
     prev.card.details === next.card.details &&
+    prev.card.description === next.card.description &&
     prev.card.priority === next.card.priority &&
     prev.card.dueDate === next.card.dueDate &&
     prev.card.assignee === next.card.assignee &&

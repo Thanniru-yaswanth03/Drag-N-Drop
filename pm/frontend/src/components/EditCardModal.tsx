@@ -63,14 +63,14 @@ export const EditCardModal = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="w-full max-w-xl rounded-[28px] border border-[var(--stroke)] bg-[var(--card-bg)] p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200 my-8">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4 overflow-y-auto animate-in fade-in duration-150">
+      <div className="w-full max-w-xl rounded-3xl glass-floating p-6 shadow-2xl animate-in zoom-in-95 duration-150 my-8">
         <div className="flex items-center justify-between border-b border-[var(--stroke)] pb-4">
           <div>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--primary-blue)]">
-              Task Details
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent-amber)] font-mono">
+              Task Details & Settings
             </span>
-            <h3 className="font-display text-xl font-semibold text-[var(--navy-dark)]">
+            <h3 className="font-display text-xl font-bold text-[var(--navy-dark)]">
               Edit Task
             </h3>
           </div>
@@ -78,16 +78,16 @@ export const EditCardModal = ({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full p-2 text-[var(--gray-text)] hover:bg-[var(--surface)] hover:text-[var(--navy-dark)] transition"
+            className="rounded-full p-2 text-[var(--gray-text)] hover:bg-[var(--surface-column)] hover:text-[var(--navy-dark)] transition"
           >
             ✕
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="mt-6 space-y-5">
+        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           {/* Title */}
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--gray-text)]">
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--gray-text)] font-mono">
               Task Title
             </label>
             <input
@@ -96,43 +96,43 @@ export const EditCardModal = ({
               onChange={(e) => setTitle(e.target.value)}
               required
               placeholder="Title..."
-              className="mt-2 w-full rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] px-4 py-3 text-sm font-semibold text-[var(--navy-dark)] outline-none focus:border-[var(--primary-blue)]"
+              className="mt-1.5 w-full rounded-2xl border border-[var(--stroke)] bg-[var(--surface-input)] px-4 py-2.5 text-sm font-semibold text-[var(--navy-dark)] outline-none focus:border-[var(--accent-amber)]"
             />
           </div>
 
           {/* Description / Details */}
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--gray-text)]">
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--gray-text)] font-mono">
               Description / Notes
             </label>
             <textarea
               value={details}
               onChange={(e) => setDetails(e.target.value)}
-              rows={4}
+              rows={3}
               placeholder="Add detailed task description..."
-              className="mt-2 w-full resize-none rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--navy-dark)] outline-none focus:border-[var(--primary-blue)]"
+              className="mt-1.5 w-full resize-none rounded-2xl border border-[var(--stroke)] bg-[var(--surface-input)] px-4 py-2.5 text-xs font-medium text-[var(--navy-dark)] outline-none focus:border-[var(--accent-amber)]"
             />
           </div>
 
           {/* Priority */}
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--gray-text)]">
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--gray-text)] font-mono">
               Priority Level
             </label>
-            <div className="mt-2 flex gap-3">
+            <div className="mt-1.5 flex gap-2">
               {(["low", "medium", "high"] as const).map((p) => (
                 <button
                   key={p}
                   type="button"
                   onClick={() => setPriority(p)}
-                  className={`flex-1 rounded-xl py-2.5 text-xs font-bold uppercase tracking-wider transition ${
+                  className={`flex-1 rounded-xl py-2 text-xs font-bold uppercase tracking-wider transition ${
                     priority === p
                       ? p === "high"
-                        ? "bg-red-500 text-white shadow-md"
+                        ? "bg-red-500 text-white shadow-md font-extrabold"
                         : p === "medium"
-                        ? "bg-amber-500 text-white shadow-md"
-                        : "bg-emerald-500 text-white shadow-md"
-                      : "border border-[var(--stroke)] bg-[var(--surface)] text-[var(--gray-text)] hover:text-[var(--navy-dark)]"
+                        ? "bg-amber-500 text-black shadow-md font-extrabold"
+                        : "bg-emerald-500 text-white shadow-md font-extrabold"
+                      : "border border-[var(--stroke)] bg-[var(--surface-input)] text-[var(--gray-text)] hover:text-[var(--navy-dark)] hover:bg-[var(--surface-column)]"
                   }`}
                 >
                   {p}
@@ -142,20 +142,20 @@ export const EditCardModal = ({
           </div>
 
           {/* Due Date & Assignee Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--gray-text)]">
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--gray-text)] font-mono">
                 Due Date
               </label>
               <input
                 type="date"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
-                className="mt-2 w-full rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] px-4 py-2.5 text-sm font-semibold text-[var(--navy-dark)] outline-none focus:border-[var(--primary-blue)]"
+                className="mt-1.5 w-full rounded-2xl border border-[var(--stroke)] bg-[var(--surface-input)] px-4 py-2 text-xs font-semibold text-[var(--navy-dark)] outline-none focus:border-[var(--accent-amber)]"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--gray-text)]">
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--gray-text)] font-mono">
                 Assignee
               </label>
               <input
@@ -163,21 +163,21 @@ export const EditCardModal = ({
                 value={assignee}
                 onChange={(e) => setAssignee(e.target.value)}
                 placeholder="Assignee name or user..."
-                className="mt-2 w-full rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] px-4 py-2.5 text-sm font-semibold text-[var(--navy-dark)] outline-none focus:border-[var(--primary-blue)]"
+                className="mt-1.5 w-full rounded-2xl border border-[var(--stroke)] bg-[var(--surface-input)] px-4 py-2 text-xs font-semibold text-[var(--navy-dark)] outline-none focus:border-[var(--accent-amber)]"
               />
             </div>
           </div>
 
           {/* Tags Section */}
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--gray-text)]">
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--gray-text)] font-mono">
               Tags
             </label>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               {tags.map((tag) => (
                 <span
                   key={tag}
-                  className="inline-flex items-center gap-1 rounded-lg bg-[var(--primary-blue)]/10 text-[var(--primary-blue)] px-2.5 py-1 text-xs font-semibold"
+                  className="inline-flex items-center gap-1 rounded-lg bg-[var(--surface-column)] border border-[var(--stroke)] text-[var(--navy-dark)] px-2.5 py-1 text-xs font-semibold"
                 >
                   #{tag}
                   <button
@@ -202,12 +202,12 @@ export const EditCardModal = ({
                   }
                 }}
                 placeholder="New tag..."
-                className="flex-1 rounded-xl border border-[var(--stroke)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium text-[var(--navy-dark)] outline-none focus:border-[var(--primary-blue)]"
+                className="flex-1 rounded-xl border border-[var(--stroke)] bg-[var(--surface-input)] px-3 py-1.5 text-xs font-medium text-[var(--navy-dark)] outline-none focus:border-[var(--accent-amber)]"
               />
               <button
                 type="button"
                 onClick={handleAddTag}
-                className="rounded-xl border border-[var(--stroke)] bg-[var(--surface)] px-3 py-1.5 text-xs font-bold text-[var(--primary-blue)] hover:bg-[var(--primary-blue)] hover:text-white transition"
+                className="rounded-xl border border-[var(--stroke)] bg-[var(--surface-column)] px-3 py-1.5 text-xs font-bold text-[var(--accent-amber)] hover:bg-[var(--accent-amber)] hover:text-black transition"
               >
                 + Add Tag
               </button>
@@ -216,7 +216,7 @@ export const EditCardModal = ({
 
           {/* Timestamps Readout */}
           {(card.createdAt || card.updatedAt) && (
-            <div className="rounded-xl border border-[var(--stroke)]/50 bg-[var(--surface)] p-3 text-[11px] text-[var(--gray-text)] space-y-1">
+            <div className="rounded-xl border border-[var(--stroke)] bg-[var(--surface-input)] p-2.5 text-[10px] text-[var(--gray-text)] font-mono space-y-0.5">
               {card.createdAt && (
                 <p>
                   <span className="font-bold">Created:</span>{" "}
@@ -233,17 +233,17 @@ export const EditCardModal = ({
           )}
 
           {/* Action Buttons */}
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-[var(--stroke)]">
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--stroke)]">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-full border border-[var(--stroke)] px-5 py-2.5 text-xs font-semibold uppercase tracking-wide text-[var(--gray-text)] hover:text-[var(--navy-dark)]"
+              className="rounded-xl border border-[var(--stroke)] bg-[var(--surface-input)] px-4 py-2 text-xs font-bold uppercase tracking-wider text-[var(--gray-text)] hover:text-[var(--navy-dark)] transition"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="rounded-full bg-[var(--secondary-purple)] px-6 py-2.5 text-xs font-semibold uppercase tracking-wide text-white shadow-md hover:brightness-110"
+              className="rounded-xl bg-[var(--accent-amber)] px-5 py-2 text-xs font-bold uppercase tracking-wider text-black shadow-md hover:brightness-110 transition"
             >
               Save Changes
             </button>

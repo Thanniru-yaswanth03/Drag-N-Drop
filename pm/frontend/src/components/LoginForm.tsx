@@ -66,26 +66,26 @@ export const LoginForm = ({ onLogin, onRegisterSuccess }: LoginFormProps) => {
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-4 py-12">
-      {/* Background Radial Gradients */}
-      <div className="pointer-events-none absolute left-0 top-0 h-[500px] w-[500px] -translate-x-1/3 -translate-y-1/3 rounded-full bg-[radial-gradient(circle,_rgba(2,132,199,0.25)_0%,_rgba(2,132,199,0.02)_60%,_transparent_75%)]" />
-      <div className="pointer-events-none absolute bottom-0 right-0 h-[600px] w-[600px] translate-x-1/4 translate-y-1/4 rounded-full bg-[radial-gradient(circle,_rgba(147,51,234,0.2)_0%,_rgba(147,51,234,0.02)_60%,_transparent_75%)]" />
+      {/* Background Radial Ambiance */}
+      <div className="pointer-events-none absolute left-0 top-0 h-[550px] w-[550px] -translate-x-1/3 -translate-y-1/3 rounded-full bg-[radial-gradient(circle,_rgba(245,158,11,0.14)_0%,_rgba(245,158,11,0.02)_60%,_transparent_75%)] blur-3xl" />
+      <div className="pointer-events-none absolute bottom-0 right-0 h-[650px] w-[650px] translate-x-1/4 translate-y-1/4 rounded-full bg-[radial-gradient(circle,_rgba(6,182,212,0.12)_0%,_rgba(6,182,212,0.02)_60%,_transparent_75%)] blur-3xl" />
 
       <main className="relative w-full max-w-md">
-        <div className="rounded-[36px] border border-[var(--stroke)] bg-[var(--card-bg)] p-8 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.15)] backdrop-blur-2xl transition-all duration-300">
+        <div className="rounded-[36px] glass-floating p-8 shadow-[var(--shadow-floating)] backdrop-blur-3xl transition-all duration-300">
           <div className="text-center">
-            <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-[var(--stroke)] bg-[var(--surface)] px-4 py-1.5 text-xs font-bold uppercase tracking-[0.25em] text-[var(--navy-dark)] shadow-2xs">
-              <span className="h-2 w-2 rounded-full bg-[var(--accent-yellow)] animate-pulse" />
-              Drag N Drop • YASH 🐐
+            <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-[var(--stroke)] bg-[var(--surface-input)] px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.25em] text-[var(--navy-dark)] shadow-2xs font-mono">
+              <span className="h-2 w-2 rounded-full bg-[var(--accent-amber)] animate-pulse" />
+              Spatial Command Center • YASH 🐐
             </div>
 
             {/* Auth Mode Toggle Tabs */}
-            <div className="mt-6 flex rounded-2xl bg-[var(--surface)] p-1 border border-[var(--stroke)]">
+            <div className="mt-6 flex rounded-2xl bg-[var(--surface-input)] p-1 border border-[var(--stroke)]">
               <button
                 type="button"
                 onClick={() => { setIsRegistering(false); setError(null); }}
                 className={`flex-1 rounded-xl py-2 text-xs font-bold transition ${
                   !isRegistering
-                    ? "bg-[var(--card-bg)] text-[var(--navy-dark)] shadow-sm"
+                    ? "bg-[var(--surface-column)] text-[var(--navy-dark)] shadow-sm border border-[var(--stroke)]"
                     : "text-[var(--gray-text)] hover:text-[var(--navy-dark)]"
                 }`}
               >
@@ -96,7 +96,7 @@ export const LoginForm = ({ onLogin, onRegisterSuccess }: LoginFormProps) => {
                 onClick={() => { setIsRegistering(true); setError(null); }}
                 className={`flex-1 rounded-xl py-2 text-xs font-bold transition ${
                   isRegistering
-                    ? "bg-[var(--card-bg)] text-[var(--navy-dark)] shadow-sm"
+                    ? "bg-[var(--surface-column)] text-[var(--navy-dark)] shadow-sm border border-[var(--stroke)]"
                     : "text-[var(--gray-text)] hover:text-[var(--navy-dark)]"
                 }`}
               >
@@ -104,13 +104,13 @@ export const LoginForm = ({ onLogin, onRegisterSuccess }: LoginFormProps) => {
               </button>
             </div>
 
-            <h1 className="mt-4 font-display text-3xl sm:text-4xl font-extrabold text-[var(--navy-dark)] tracking-tight">
+            <h1 className="mt-5 font-display text-2xl sm:text-3xl font-extrabold text-[var(--navy-dark)] tracking-tight">
               {isRegistering ? "Register Account" : "Sign In"}
             </h1>
-            <p className="mt-2 text-xs sm:text-sm font-medium leading-relaxed text-[var(--gray-text)]">
+            <p className="mt-2 text-xs font-medium leading-relaxed text-[var(--gray-text)]">
               {isRegistering
-                ? "Create a new user account to manage your projects."
-                : "Access your project management workspace."}
+                ? "Create a new user account to manage your spatial workspace."
+                : "Access your spatial project command board."}
             </p>
           </div>
 
@@ -118,7 +118,7 @@ export const LoginForm = ({ onLogin, onRegisterSuccess }: LoginFormProps) => {
             {error && (
               <div
                 role="alert"
-                className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-xs font-semibold text-red-600 dark:text-red-400"
+                className="rounded-2xl border border-red-500/30 bg-red-500/10 p-3.5 text-xs font-semibold text-red-400"
               >
                 {error}
               </div>
@@ -127,7 +127,7 @@ export const LoginForm = ({ onLogin, onRegisterSuccess }: LoginFormProps) => {
             <div>
               <label
                 htmlFor="username"
-                className="block text-xs font-bold uppercase tracking-wider text-[var(--navy-dark)] mb-1.5"
+                className="block text-[10px] font-bold uppercase tracking-wider text-[var(--navy-dark)] mb-1.5 font-mono"
               >
                 Username
               </label>
@@ -138,14 +138,14 @@ export const LoginForm = ({ onLogin, onRegisterSuccess }: LoginFormProps) => {
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="user"
                 required
-                className="w-full rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] px-4 py-3.5 text-base sm:text-xs font-semibold text-[var(--navy-dark)] placeholder:text-[var(--gray-text)] outline-none transition focus:border-[var(--primary-blue)] focus:ring-2 focus:ring-[var(--primary-blue)]/20"
+                className="w-full rounded-2xl border border-[var(--stroke)] bg-[var(--surface-input)] px-4 py-3 text-sm font-semibold text-[var(--navy-dark)] placeholder:text-[var(--gray-text)] outline-none transition focus:border-[var(--accent-amber)]"
               />
             </div>
 
             <div>
               <label
                 htmlFor="password"
-                className="block text-xs font-bold uppercase tracking-wider text-[var(--navy-dark)] mb-1.5"
+                className="block text-[10px] font-bold uppercase tracking-wider text-[var(--navy-dark)] mb-1.5 font-mono"
               >
                 Password
               </label>
@@ -156,15 +156,14 @@ export const LoginForm = ({ onLogin, onRegisterSuccess }: LoginFormProps) => {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 required
-                className="w-full rounded-2xl border border-[var(--stroke)] bg-[var(--surface)] px-4 py-3.5 text-base sm:text-xs font-semibold text-[var(--navy-dark)] placeholder:text-[var(--gray-text)] outline-none transition focus:border-[var(--primary-blue)] focus:ring-2 focus:ring-[var(--primary-blue)]/20"
+                className="w-full rounded-2xl border border-[var(--stroke)] bg-[var(--surface-input)] px-4 py-3 text-sm font-semibold text-[var(--navy-dark)] placeholder:text-[var(--gray-text)] outline-none transition focus:border-[var(--accent-amber)]"
               />
-
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              className="mt-6 w-full rounded-2xl bg-gradient-to-r from-[var(--secondary-purple)] to-[var(--primary-blue)] py-4 text-xs font-bold uppercase tracking-widest text-white shadow-xl transition hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
+              className="mt-6 w-full rounded-2xl bg-[var(--accent-amber)] py-3.5 text-xs font-bold uppercase tracking-widest text-black shadow-xl transition hover:brightness-110 active:scale-[0.98] disabled:opacity-50"
             >
               {loading
                 ? isRegistering
@@ -175,10 +174,8 @@ export const LoginForm = ({ onLogin, onRegisterSuccess }: LoginFormProps) => {
                 : "Sign In"}
             </button>
           </form>
-
         </div>
       </main>
     </div>
   );
 };
-

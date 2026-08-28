@@ -1,29 +1,85 @@
 @import "tailwindcss";
 
 :root {
+  /* Spatial Command Center - Light Palette (Clean Technical Precision) */
+  --bg-environment: #f4f6f9;
+  --surface: #f4f6f9;
+  --surface-strong: #ffffff;
+  --surface-board: rgba(255, 255, 255, 0.85);
+  --surface-column: #f8fafc;
+  --surface-column-header: #f1f5f9;
+  --surface-card: #ffffff;
+  --surface-card-hover: #fbfcfe;
+  --surface-floating: #ffffff;
+  --surface-input: #f8fafc;
+  --card-bg: #ffffff;
+  --navy-dark: #0f172a;
+  --gray-text: #64748b;
+  --stroke: rgba(15, 23, 42, 0.09);
+  --stroke-strong: rgba(15, 23, 42, 0.16);
+  --stroke-highlight: rgba(217, 119, 6, 0.4);
+
+  /* Accents */
+  --accent-amber: #d97706;
+  --accent-amber-glow: rgba(217, 119, 6, 0.2);
+  --accent-cyan: #0284c7;
+  --accent-cyan-glow: rgba(2, 132, 199, 0.2);
+  --accent-emerald: #059669;
+  --accent-coral: #e11d48;
   --accent-yellow: #f59e0b;
   --primary-blue: #0284c7;
   --secondary-purple: #9333ea;
-  --navy-dark: #0f172a;
-  --gray-text: #64748b;
-  --surface: #f8fafc;
-  --surface-strong: #ffffff;
-  --card-bg: #ffffff;
-  --stroke: rgba(15, 23, 42, 0.08);
-  --shadow: 0 20px 40px -15px rgba(15, 23, 42, 0.07);
+
+  /* Shadows */
+  --shadow: 0 16px 36px -8px rgba(15, 23, 42, 0.08), 0 4px 12px -2px rgba(15, 23, 42, 0.04);
+  --shadow-card: 0 6px 18px -4px rgba(15, 23, 42, 0.06), 0 2px 6px -2px rgba(15, 23, 42, 0.04);
+  --shadow-floating: 0 24px 60px -12px rgba(15, 23, 42, 0.18), 0 0 0 1px rgba(15, 23, 42, 0.06);
+  --shadow-drag: 0 30px 60px -12px rgba(15, 23, 42, 0.25), 0 0 25px rgba(217, 119, 6, 0.2);
+
+  /* Grid lines */
+  --grid-line: rgba(15, 23, 42, 0.05);
+  --spotlight-color: rgba(2, 132, 199, 0.05);
 }
 
 [data-theme="dark"] {
+  /* Spatial Command Center - Dark Palette (Obsidian / Graphite / Gunmetal / Electric Amber) */
+  --bg-environment: #0a0c10;
+  --surface: #0a0c10;
+  --surface-strong: #121620;
+  --surface-board: rgba(16, 20, 29, 0.85);
+  --surface-column: #151923;
+  --surface-column-header: #181e2b;
+  --surface-card: #1b202e;
+  --surface-card-hover: #202737;
+  --surface-floating: #22283a;
+  --surface-input: #12151f;
+  --card-bg: #1b202e;
+  --navy-dark: #f1f5f9;
+  --gray-text: #94a3b8;
+  --stroke: rgba(255, 255, 255, 0.08);
+  --stroke-strong: rgba(255, 255, 255, 0.15);
+  --stroke-highlight: rgba(245, 158, 11, 0.45);
+
+  /* Accents */
+  --accent-amber: #f59e0b;
+  --accent-amber-glow: rgba(245, 158, 11, 0.3);
+  --accent-cyan: #06b6d4;
+  --accent-cyan-glow: rgba(6, 182, 212, 0.3);
+  --accent-emerald: #10b981;
+  --accent-coral: #f43f5e;
   --accent-yellow: #fbbf24;
   --primary-blue: #38bdf8;
   --secondary-purple: #c084fc;
-  --navy-dark: #f8fafc;
-  --gray-text: #94a3b8;
-  --surface: #070d1e;
-  --surface-strong: #0f172a;
-  --card-bg: #1e293b;
-  --stroke: rgba(255, 255, 255, 0.1);
-  --shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+
+  /* Shadows */
+  --shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --shadow-card: 0 8px 24px -6px rgba(0, 0, 0, 0.45), 0 2px 6px -2px rgba(0, 0, 0, 0.3);
+  --shadow-floating: 0 30px 70px -15px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.1);
+  --shadow-drag: 0 35px 75px -15px rgba(0, 0, 0, 0.8), 0 0 30px rgba(245, 158, 11, 0.3);
+
+  /* Grid lines */
+  --grid-line: rgba(255, 255, 255, 0.04);
+  --spotlight-color: rgba(245, 158, 11, 0.04);
 }
 
 @theme inline {
@@ -36,16 +92,23 @@
   box-sizing: border-box;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  touch-action: manipulation;
+  scroll-behavior: smooth;
+}
+
 body {
-  background-color: var(--surface);
+  background-color: var(--bg-environment);
   color: var(--navy-dark);
   font-family: var(--font-body), "Segoe UI", system-ui, -apple-system, sans-serif;
   margin: 0;
-  transition: background-color 0.3s ease, color 0.3s ease;
+  transition: background-color 0.3s cubic-bezier(0.16, 1, 0.3, 1), color 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow-x: hidden;
 }
 
 .font-display {
-  font-family: var(--font-display), "Segoe UI", system-ui, sans-serif;
+  font-family: var(--font-display), "Space Grotesk", "Segoe UI", system-ui, sans-serif;
 }
 
 /* Custom Scrollbars */
@@ -64,18 +127,12 @@ body {
   background: var(--gray-text);
 }
 
-html {
-  -webkit-text-size-adjust: 100%;
-  touch-action: manipulation;
-}
-
-/* Contrast & visibility enforcement for light and dark mode inputs */
+/* Contrast & visibility enforcement for inputs */
 input, select, textarea {
   color: var(--navy-dark);
-  background-color: var(--surface);
+  background-color: var(--surface-input);
 }
 
-/* Mobile input zoom prevention (iOS Safari auto-zooms if font-size < 16px) */
 @media (max-width: 767px) {
   input, select, textarea {
     font-size: 16px !important;
@@ -84,23 +141,155 @@ input, select, textarea {
 
 ::placeholder {
   color: var(--gray-text);
-  opacity: 0.85;
+  opacity: 0.8;
 }
 
 /* Utility to hide scrollbar while keeping scroll functionality */
-.scrollbar-none::-webkit-scrollbar {
+.scrollbar-none::-webkit-scrollbar,
+.no-scrollbar::-webkit-scrollbar {
   display: none;
 }
-.scrollbar-none {
+.scrollbar-none,
+.no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
 
-/* Vertical stacked layout on mobile for Kanban columns */
+/* 3D Spatial Canvas Utilities */
+.spatial-perspective {
+  perspective: 1200px;
+  transform-style: preserve-3d;
+}
+
+.spatial-layer-0 {
+  transform: translateZ(0px);
+}
+
+.spatial-layer-1 {
+  transform: translateZ(4px);
+}
+
+.spatial-layer-2 {
+  transform: translateZ(8px);
+}
+
+.spatial-layer-3 {
+  transform: translateZ(14px);
+}
+
+.spatial-layer-4 {
+  transform: translateZ(28px);
+}
+
+.spatial-layer-5 {
+  transform: translateZ(44px);
+}
+
+/* Spatial Grid Matrix */
+.spatial-grid-bg {
+  background-size: 32px 32px;
+  background-image: 
+    radial-gradient(var(--grid-line) 1.2px, transparent 1.2px);
+}
+
+/* Glassmorphism Refraction & Shimmer */
+.glass-panel {
+  background: var(--surface-board);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid var(--stroke);
+}
+
+.glass-floating {
+  background: var(--surface-floating);
+  backdrop-filter: blur(24px) saturate(190%);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+  border: 1px solid var(--stroke-strong);
+  box-shadow: var(--shadow-floating);
+}
+
+/* Custom Keyframe Animations */
+@keyframes gyro-orbit-1 {
+  0% {
+    transform: rotateX(65deg) rotateY(20deg) rotateZ(0deg);
+  }
+  100% {
+    transform: rotateX(65deg) rotateY(20deg) rotateZ(360deg);
+  }
+}
+
+@keyframes gyro-orbit-2 {
+  0% {
+    transform: rotateX(-45deg) rotateY(55deg) rotateZ(360deg);
+  }
+  100% {
+    transform: rotateX(-45deg) rotateY(55deg) rotateZ(0deg);
+  }
+}
+
+@keyframes gyro-orbit-3 {
+  0% {
+    transform: rotateX(30deg) rotateY(-40deg) rotateZ(0deg);
+  }
+  100% {
+    transform: rotateX(30deg) rotateY(-40deg) rotateZ(360deg);
+  }
+}
+
+@keyframes pulse-beacon {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 0.5;
+  }
+}
+
+@keyframes float-subtle {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes shimmer-sweep {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-gyro-1 {
+  animation: gyro-orbit-1 9s linear infinite;
+}
+
+.animate-gyro-2 {
+  animation: gyro-orbit-2 7s linear infinite;
+}
+
+.animate-gyro-3 {
+  animation: gyro-orbit-3 11s linear infinite;
+}
+
+.animate-beacon {
+  animation: pulse-beacon 2.5s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: float-subtle 4s ease-in-out infinite;
+}
+
+/* Mobile Column Layout */
 .mobile-snap-scroll {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.25rem;
   width: 100%;
 }
 
@@ -114,7 +303,7 @@ input, select, textarea {
   .mobile-snap-scroll {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 1.5rem;
+    gap: 1.25rem;
   }
 
   .mobile-snap-column {
@@ -124,4 +313,18 @@ input, select, textarea {
   }
 }
 
-
+/* Accessibility: Respect Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  
+  .spatial-card-tilt {
+    transform: none !important;
+  }
+}

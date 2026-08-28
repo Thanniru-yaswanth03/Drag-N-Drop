@@ -18,7 +18,7 @@ export const getApiUrl = (path: string) => {
       (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") &&
       window.location.protocol === "http:"
     ) {
-      return `http://127.0.0.1:8008${path}`;
+      return `http://127.0.0.1:8000${path}`;
     }
 
     if (window.location.port === "8001" || window.location.port === "8000") {
