@@ -34,10 +34,7 @@ export const KanbanCardPreview = ({ card }: KanbanCardPreviewProps) => {
 
   return (
     <article
-      className="group relative rounded-2xl border-2 border-[var(--accent-amber)] bg-[var(--surface-floating)] p-4 shadow-[var(--shadow-drag)] backdrop-blur-2xl rotate-[2.5deg] scale-[1.03] transition-transform duration-100 ring-4 ring-[var(--accent-amber-glow)] cursor-grabbing select-none"
-      style={{
-        transform: "perspective(1000px) translateZ(32px) rotate(2.5deg)",
-      }}
+      className="group relative rounded-2xl border-2 border-[var(--accent-amber)] bg-[var(--surface-floating)] p-4 shadow-[var(--shadow-drag)] backdrop-blur-2xl ring-4 ring-[var(--accent-amber-glow)] cursor-grabbing select-none"
     >
       <div className="flex items-center justify-between gap-2 mb-2.5">
         <span

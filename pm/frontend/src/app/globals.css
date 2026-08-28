@@ -157,32 +157,8 @@ input, select, textarea {
 
 /* 3D Spatial Canvas Utilities */
 .spatial-perspective {
-  perspective: 1200px;
-  transform-style: preserve-3d;
-}
-
-.spatial-layer-0 {
-  transform: translateZ(0px);
-}
-
-.spatial-layer-1 {
-  transform: translateZ(4px);
-}
-
-.spatial-layer-2 {
-  transform: translateZ(8px);
-}
-
-.spatial-layer-3 {
-  transform: translateZ(14px);
-}
-
-.spatial-layer-4 {
-  transform: translateZ(28px);
-}
-
-.spatial-layer-5 {
-  transform: translateZ(44px);
+  /* Keep container clean so fixed position DragOverlay tracks cursor precisely */
+  isolation: isolate;
 }
 
 /* Spatial Grid Matrix */
